@@ -264,8 +264,8 @@
       // you'd need to handle the stream download properly
       const response = await window.electronAPI.downloadSystem(item.idSistema);
 
-      if (response) {
-        console.log(`Update downloaded for ${item.title}`);
+      if (response && response.success) {
+        console.log(`Update downloaded for ${item.title}: ${response.path}`);
         // The actual file download and extraction would happen in the main process
       }
 

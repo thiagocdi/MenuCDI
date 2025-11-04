@@ -245,14 +245,28 @@ ipcMain.handle('api-download-system', async (event, systemId) => {
         headers: { Authorization: `Bearer ${authToken}` },
         responseType: 'stream'
       });
-      return legacyResp;
+      // Save stream to temporary file and return a safe object
+      const tmpDir = path.join(appConfig.caminhoExecLocal || os.tmpdir(), 'tmp');
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+      const filename = (legacyResp.headers && legacyResp.headers['content-disposition'])
+        ? (legacyResp.headers['content-disposition'].split('filename=')[1] || `${systemId}.zip`).replace(/"/g, '')
+        : `${systemId}.zip`;
+      const tmpPath = path.join(tmpDir, filename);
+
+      const writer = fs.createWriteStream(tmpPath);
+      await new Promise((resolve, reject) => {
+        legacyResp.data.pipe(writer);
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+      });
+
+      return { success: true, path: tmpPath };
     } catch (err) {
       if (!(err.response && err.response.status === 404)) {
         throw err;
       }
       // else fallback below
     }
-
     // API sample uses POST /downloadSistema with IdSistema as query
     const response = await axios.post(`${appConfig.apiBaseUrl}/downloadSistema`, null, {
       headers: { Authorization: `Bearer ${authToken}` },
@@ -260,10 +274,28 @@ ipcMain.handle('api-download-system', async (event, systemId) => {
       responseType: 'stream'
     });
 
-    return response;
+    // Save stream to temp file and return path
+    const tmpDir = path.join(appConfig.caminhoExecLocal || os.tmpdir(), 'tmp');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const filename = (response.headers && response.headers['content-disposition'])
+      ? (response.headers['content-disposition'].split('filename=')[1] || `${systemId}.zip`).replace(/"/g, '')
+      : `${systemId}.zip`;
+    const tmpPath = path.join(tmpDir, filename);
+
+    const writer = fs.createWriteStream(tmpPath);
+    await new Promise((resolve, reject) => {
+      response.data.pipe(writer);
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
+
+    return { success: true, path: tmpPath };
   } catch (error) {
-    const body = error.response && error.response.data ? (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data)) : error.message;
-    console.error('Download system error:', error.message, error.response ? error.response.data : '');
+    // Avoid serializing the full error/response (may contain circular refs). Log safe fields.
+    const status = error.response && error.response.status;
+    const statusText = error.response && error.response.statusText;
+    console.error('Download system error:', error.message, { status, statusText });
+    const body = error.response && error.response.data ? (typeof error.response.data === 'string' ? error.response.data : '[object]') : error.message;
     throw new Error(`Download system failed: ${body}`);
   }
 });

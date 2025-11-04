@@ -14,9 +14,11 @@
 }
 
 .login-card {
-  background: rgba(255, 255, 255, 0.03);
+  /* Slightly more opaque card for readable contrast on dark background */
+  background: rgba(255, 255, 255, 0.06);
   border: none !important;
   color: #e9ecef;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6);
 }
 
 .loading-overlay {
@@ -38,6 +40,21 @@
 
 .form-floating > .form-control {
   height: calc(3.5rem + 2px);
+}
+
+/* Dark-style form controls */
+.form-control {
+  background-color: rgba(255,255,255,0.03) !important;
+  color: #e9ecef !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+}
+
+.form-control::placeholder {
+  color: rgba(233,238,239,0.6) !important;
+}
+
+.form-floating > label {
+  color: rgba(233,238,239,0.85) !important;
 }
 
 .btn-primary {
