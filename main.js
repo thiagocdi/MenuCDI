@@ -148,14 +148,32 @@ ipcMain.handle('get-auth-state', () => {
 ipcMain.handle('api-get-systems', async () => {
   try {
     if (!authToken) throw new Error('Not authenticated');
-    
-    const response = await axios.get(`${appConfig.apiBaseUrl}/sistemas/menu`, {
+    // Try legacy endpoint first, then fallback to documented API sample
+    let response;
+    try {
+      response = await axios.get(`${appConfig.apiBaseUrl}/sistemas/menu`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+    } catch (err) {
+      if (err.response && err.response.status === 404) {
+        response = null;
+      } else {
+        throw err;
+      }
+    }
+
+    if (response && response.data) return response.data;
+
+    // Fallback to /sistemasMenu (API sample)
+    response = await axios.get(`${appConfig.apiBaseUrl}/sistemasMenu`, {
       headers: { Authorization: `Bearer ${authToken}` }
     });
-    
+
+    // API sample wraps result in ApiResponse<T>. Try to unwrap if present.
+    if (response.data && response.data.data) return response.data.data;
     return response.data;
   } catch (error) {
-    console.error('Get systems error:', error.message);
+    console.error('Get systems error:', error.message, error.response ? error.response.data : '');
     throw error;
   }
 });
@@ -163,14 +181,33 @@ ipcMain.handle('api-get-systems', async () => {
 ipcMain.handle('api-get-system-version', async (event, systemId) => {
   try {
     if (!authToken) throw new Error('Not authenticated');
-    
-    const response = await axios.get(`${appConfig.apiBaseUrl}/sistemas/${systemId}/versao`, {
-      headers: { Authorization: `Bearer ${authToken}` }
+    // Try legacy route then fallback to API sample's /sistema?IdSistema=...
+    let response;
+    try {
+      response = await axios.get(`${appConfig.apiBaseUrl}/sistemas/${systemId}/versao`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+    } catch (err) {
+      if (err.response && err.response.status === 404) {
+        response = null;
+      } else {
+        throw err;
+      }
+    }
+
+    if (response && response.data) return response.data;
+
+    // Fallback: GET /sistema?IdSistema=123 (API sample)
+    response = await axios.get(`${appConfig.apiBaseUrl}/sistema`, {
+      headers: { Authorization: `Bearer ${authToken}` },
+      params: { IdSistema: systemId }
     });
-    
+
+    // If wrapped in ApiResponse, unwrap
+    if (response.data && response.data.data) return response.data.data;
     return response.data;
   } catch (error) {
-    console.error('Get system version error:', error.message);
+    console.error('Get system version error:', error.message, error.response ? error.response.data : '');
     throw error;
   }
 });
@@ -178,15 +215,30 @@ ipcMain.handle('api-get-system-version', async (event, systemId) => {
 ipcMain.handle('api-download-system', async (event, systemId) => {
   try {
     if (!authToken) throw new Error('Not authenticated');
-    
-    const response = await axios.get(`${appConfig.apiBaseUrl}/sistemas/${systemId}/download`, {
+    // Try legacy path first, fall back to documented POST /downloadSistema?IdSistema=...
+    try {
+      const legacyResp = await axios.get(`${appConfig.apiBaseUrl}/sistemas/${systemId}/download`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+        responseType: 'stream'
+      });
+      return legacyResp;
+    } catch (err) {
+      if (!(err.response && err.response.status === 404)) {
+        throw err;
+      }
+      // else fallback below
+    }
+
+    // API sample uses POST /downloadSistema with IdSistema as query
+    const response = await axios.post(`${appConfig.apiBaseUrl}/downloadSistema`, null, {
       headers: { Authorization: `Bearer ${authToken}` },
+      params: { IdSistema: systemId },
       responseType: 'stream'
     });
-    
+
     return response;
   } catch (error) {
-    console.error('Download system error:', error.message);
+    console.error('Download system error:', error.message, error.response ? error.response.data : '');
     throw error;
   }
 });
