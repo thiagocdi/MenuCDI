@@ -24,6 +24,17 @@
   const modalConfirmBtn = document.getElementById('modal-confirm-btn');
 
   // Utility functions
+  function joinPath(base, sub) {
+    if (!base) return sub;
+    // normalize
+    base = String(base);
+    sub = String(sub);
+    if (base.endsWith('\\') || base.endsWith('/')) return base + sub;
+    // prefer backslash on Windows-style paths
+    const sep = base.indexOf('/') !== -1 ? '/' : '\\';
+    return base + sep + sub;
+  }
+
   function showLoading(state, message = 'Carregando...') {
     isLoading = state;
     loadingOverlay.style.display = state ? 'flex' : 'none';
@@ -153,8 +164,8 @@
     try {
       showLoading(true, `Iniciando ${item.title}...`);
 
-      const exePath = `${appConfig.caminhoExecLocal}${item.action}`;
-      const tmpDir = `${appConfig.caminhoExecLocal}tmp\\`;
+  const exePath = joinPath(appConfig.caminhoExecLocal, item.action);
+  const tmpDir = joinPath(appConfig.caminhoExecLocal, 'tmp\\');
 
       // Ensure tmp directory exists
       await window.electronAPI.ensureDirectory(tmpDir);
@@ -189,7 +200,7 @@
       }
 
       // Check for updated version in tmp folder
-      const tmpExePath = `${tmpDir}${item.action}`;
+  const tmpExePath = joinPath(tmpDir, item.action);
       const tmpFileExists = await window.electronAPI.getFileVersion(tmpExePath);
 
       if (tmpFileExists) {
@@ -222,8 +233,8 @@
   async function checkForUpdates(item, tmpDir) {
     try {
       // This runs in background, don't show loading
-      const sistema = await window.electronAPI.getSystemVersion(item.idSistema);
-      const exePath = `${appConfig.caminhoExecLocal}${item.action}`;
+  const sistema = await window.electronAPI.getSystemVersion(item.idSistema);
+  const exePath = joinPath(appConfig.caminhoExecLocal, item.action);
 
       const localVersion = await window.electronAPI.getFileVersion(exePath);
 
