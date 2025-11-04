@@ -67,17 +67,63 @@ ipcMain.handle('api-status', async () => {
 
 ipcMain.handle('api-login', async (event, { username, password }) => {
   try {
-    const response = await axios.post(`${appConfig.apiBaseUrl}/auth/login`, {
-      username,
-      password
-    });
-    
-    if (response.data.success) {
-      authToken = response.data.token;
-      currentUser = response.data.user;
-      return { success: true, user: currentUser, token: authToken };
+    // Try legacy/auth path first (some deployments use /auth/login)
+    let response;
+    try {
+      response = await axios.post(`${appConfig.apiBaseUrl}/auth/login`, {
+        username,
+        password
+      });
+    } catch (err) {
+      // If the endpoint does not exist (404), we'll try the alternative documented API below
+      if (err.response && err.response.status === 404) {
+        response = null;
+      } else {
+        throw err;
+      }
     }
-    return { success: false, message: response.data.message };
+
+    // If we got a response from /auth/login handle its expected shape
+    if (response && response.data) {
+      // older variant: { success: true, token, user }
+      if (response.data.success === true) {
+        authToken = response.data.token || response.data.accessToken;
+        currentUser = response.data.user || null;
+        return { success: true, user: currentUser, token: authToken };
+      }
+
+      // newer variant may return tokens directly
+      if (response.data.token || response.data.accessToken) {
+        authToken = response.data.token || response.data.accessToken;
+        currentUser = response.data.user || null;
+        return { success: true, user: currentUser, token: authToken };
+      }
+
+      // otherwise fall through to try documented endpoint
+    }
+
+    // Fallback: documented API sample exposes POST /login (under route prefix api/ at server)
+    // The sample expects DTO keys like Usuario and Senha. Map accordingly.
+    response = await axios.post(`${appConfig.apiBaseUrl}/login`, {
+      Usuario: username,
+      Senha: password
+    });
+
+    // Sample /login returns { accessToken, refreshToken, ... }
+    if (response && response.data) {
+      const token = response.data.accessToken || response.data.access_token || response.data.token;
+      if (token) {
+        authToken = token;
+        // The sample doesn't always include a full user object; store minimal info
+        currentUser = { username };
+        return { success: true, user: currentUser, token: authToken };
+      }
+
+      // If login failed with a message
+      return { success: false, message: response.data.message || 'Login falhou' };
+    }
+
+    return { success: false, message: 'Login falhou' };
   } catch (error) {
     console.error('Login error:', error.message);
     return { success: false, message: 'Erro ao conectar com o servidor' };
