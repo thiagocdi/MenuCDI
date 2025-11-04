@@ -12,6 +12,23 @@ let appConfig = {
   caminhoExecLocal: process.env.CDI_CAMINHO_EXEC_LOCAL || ''
 };
 
+// Normalize API base: ensure it ends with '/api' (no trailing slash)
+function normalizeApiBase(url) {
+  if (!url) return url;
+  // Trim whitespace
+  url = url.trim();
+  // Remove trailing slashes
+  url = url.replace(/\/+$|\s+$/g, '');
+  if (!/\/api$/i.test(url)) {
+    // Remove any trailing slash then append /api
+    url = url.replace(/\/+$/g, '') + '/api';
+  }
+  return url.replace(/\/+$/g, '');
+}
+
+// Apply normalization at startup
+appConfig.apiBaseUrl = normalizeApiBase(appConfig.apiBaseUrl);
+
 // Auth state
 let authToken = null;
 let currentUser = null;
@@ -49,7 +66,11 @@ ipcMain.handle('get-config', () => {
 });
 
 ipcMain.handle('set-config', (event, key, value) => {
-  appConfig[key] = value;
+  if (key === 'apiBaseUrl') {
+    appConfig[key] = normalizeApiBase(value);
+  } else {
+    appConfig[key] = value;
+  }
   return true;
 });
 
@@ -60,7 +81,7 @@ ipcMain.handle('api-status', async () => {
     const response = await axios.get(`${appConfig.apiBaseUrl}/status`, { timeout: 5000 });
     return response.status === 200;
   } catch (error) {
-    console.error('API Status error:', error.message);
+    console.error('API Status error:', error.message, error.response ? error.response.data : '');
     return false;
   }
 });
@@ -125,8 +146,9 @@ ipcMain.handle('api-login', async (event, { username, password }) => {
 
     return { success: false, message: 'Login falhou' };
   } catch (error) {
-    console.error('Login error:', error.message);
-    return { success: false, message: 'Erro ao conectar com o servidor' };
+    console.error('Login error:', error.message, error.response ? error.response.data : '');
+    const body = error.response && error.response.data ? (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data)) : error.message;
+    return { success: false, message: `Erro ao conectar com o servidor: ${body}` };
   }
 });
 
@@ -173,8 +195,9 @@ ipcMain.handle('api-get-systems', async () => {
     if (response.data && response.data.data) return response.data.data;
     return response.data;
   } catch (error) {
+    const body = error.response && error.response.data ? (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data)) : error.message;
     console.error('Get systems error:', error.message, error.response ? error.response.data : '');
-    throw error;
+    throw new Error(`Get systems failed: ${body}`);
   }
 });
 
@@ -207,8 +230,9 @@ ipcMain.handle('api-get-system-version', async (event, systemId) => {
     if (response.data && response.data.data) return response.data.data;
     return response.data;
   } catch (error) {
+    const body = error.response && error.response.data ? (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data)) : error.message;
     console.error('Get system version error:', error.message, error.response ? error.response.data : '');
-    throw error;
+    throw new Error(`Get system version failed: ${body}`);
   }
 });
 
@@ -238,8 +262,9 @@ ipcMain.handle('api-download-system', async (event, systemId) => {
 
     return response;
   } catch (error) {
+    const body = error.response && error.response.data ? (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data)) : error.message;
     console.error('Download system error:', error.message, error.response ? error.response.data : '');
-    throw error;
+    throw new Error(`Download system failed: ${body}`);
   }
 });
 
