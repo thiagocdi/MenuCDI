@@ -111,9 +111,23 @@ git commit -m "feat: implement new system status API endpoint"
 
 **Always suggest the commit command** after completing any code changes, using the appropriate commit message pattern and clear description of what was implemented.
 
-## Known limitations
-- File version detection is simplified (needs Windows-specific implementation)
-- Download progress not implemented (could add progress events)
-- Single-user session (no multi-user switching)
+## Enforcing the workflow with Git hooks (optional)
+To help enforce the project's commit workflow we provide a small set of Git hook scripts under `.githooks/` and an installer script to copy them into your local `.git/hooks` folder.
+
+- What the hooks do:
+	- `commit-msg` (PowerShell + `.cmd` wrapper) validates that commit messages follow the conventional pattern: `type(optional-scope): description`. Allowed types: `feat, fix, refactor, docs, chore, test, perf, ci, build`.
+
+- How to install (Windows PowerShell):
+
+```powershell
+cd .\scripts
+.\install-git-hooks.ps1
+```
+
+After running the installer the `commit-msg` hook will block commits whose messages don't match the required pattern. If you absolutely must bypass a hook, use `git commit --no-verify` (use sparingly).
+
+Notes:
+- Hooks are copied into the local `.git/hooks` directory and are not tracked by Git there. The canonical hook sources are under `.githooks/` in the repository.
+- If you want to set this up automatically for all developers, you can instruct contributors to run the installer after cloning, or set `core.hooksPath` in local config to point to `.githooks` (note: `core.hooksPath` is not tracked in the repo config).
 
 If you need to add new features or fix compatibility issues, focus on the IPC handlers in main.js and corresponding preload.js exposures.
