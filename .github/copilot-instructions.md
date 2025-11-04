@@ -111,23 +111,35 @@ git commit -m "feat: implement new system status API endpoint"
 
 **Always suggest the commit command** after completing any code changes, using the appropriate commit message pattern and clear description of what was implemented.
 
-## Enforcing the workflow with Git hooks (optional)
-To help enforce the project's commit workflow we provide a small set of Git hook scripts under `.githooks/` and an installer script to copy them into your local `.git/hooks` folder.
+## Assistant commit workflow — simple and explicit
+You told us you prefer a minimal, easy workflow and don't want hooks. Good — we'll keep it simple.
 
-- What the hooks do:
-	- `commit-msg` (PowerShell + `.cmd` wrapper) validates that commit messages follow the conventional pattern: `type(optional-scope): description`. Allowed types: `feat, fix, refactor, docs, chore, test, perf, ci, build`.
+When the assistant suggests code changes, follow this exact flow so you can easily roll back any change:
 
-- How to install (Windows PowerShell):
+1. Create a backup commit BEFORE making the change. Example:
 
 ```powershell
-cd .\scripts
-.\install-git-hooks.ps1
+git add -A
+git commit -m "chore: backup before <short description of upcoming change>"
 ```
 
-After running the installer the `commit-msg` hook will block commits whose messages don't match the required pattern. If you absolutely must bypass a hook, use `git commit --no-verify` (use sparingly).
+2. Apply the suggested code changes (the assistant will make edits or give the exact patch).
+
+3. Commit the changes AFTER implementing them with a clear conventional-style message. Example:
+
+```powershell
+git add -A
+git commit -m "feat: implement <short description of change>"
+```
+
+4. Push the branch to the remote so the change is visible on the web:
+
+```powershell
+git push origin main
+```
 
 Notes:
-- Hooks are copied into the local `.git/hooks` directory and are not tracked by Git there. The canonical hook sources are under `.githooks/` in the repository.
-- If you want to set this up automatically for all developers, you can instruct contributors to run the installer after cloning, or set `core.hooksPath` in local config to point to `.githooks` (note: `core.hooksPath` is not tracked in the repo config).
+- The assistant will always include the two suggested commit commands (before and after) and will push the final commit to the remote when you request it.
+- Your corporate VCS and any further integration steps are separate — we'll only use Git here to track assistant-suggested changes and to make rollback easy for you.
 
-If you need to add new features or fix compatibility issues, focus on the IPC handlers in main.js and corresponding preload.js exposures.
+If you later change your mind and want hook-based enforcement, tell us and we can add it back; for now we keep the repo clean and simple.
