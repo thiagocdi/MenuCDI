@@ -1,11 +1,12 @@
 /* Styles extracted from login.html */
 .bg-brand {
-  background: linear-gradient(135deg, #023c54 0%, #034a69 100%);
+  background: linear-gradient(135deg, #2b3035 0%, #222528 100%);
   min-height: 100vh;
+  color: #e9ecef;
 }
 
 .login-bg {
-  background: linear-gradient(135deg, #023c54 0%, #034a69 100%);
+  background: linear-gradient(135deg, #2b3035 0%, #222528 100%);
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -13,9 +14,9 @@
 }
 
 .login-card {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.03);
   border: none !important;
+  color: #e9ecef;
 }
 
 .loading-overlay {

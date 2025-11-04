@@ -12,7 +12,6 @@
   const loadingOverlay = document.getElementById('loading-overlay');
   const loadingMessage = document.getElementById('loading-message');
   const menuContainer = document.getElementById('menu-container');
-  const welcomeBanner = document.getElementById('welcome-banner');
   const usernameDisplay = document.getElementById('username-display');
   const logoutBtn = document.getElementById('logout-btn');
   const errorToast = document.getElementById('error-toast');
@@ -99,7 +98,7 @@
       // Load menu systems
       await loadMenuSystems();
 
-      welcomeBanner.style.display = 'block';
+  // welcome banner removed; no-op
 
     } catch (error) {
       console.error('Initialization error:', error);

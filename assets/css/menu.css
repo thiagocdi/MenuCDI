@@ -1,6 +1,7 @@
 /* Styles extracted from index.html */
 body {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: linear-gradient(135deg, #2b3035 0%, #222528 100%);
+  color: #e9ecef;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
@@ -49,7 +50,7 @@ body {
 
 .menu-icon {
   font-size: 2.5rem;
-  color: #023c54;
+  color: #e9ecef;
   margin-bottom: 15px;
   transition: all 0.3s ease;
 }
@@ -62,7 +63,7 @@ body {
 .menu-text {
   font-size: 1rem;
   font-weight: 600;
-  color: #495057;
+  color: #e9ecef;
   line-height: 1.3;
 }
 
