@@ -81,6 +81,36 @@ await window.electronAPI.moveFile(source, destination);
 - **Config option**: Add to env var loading in main.js AppConfig object
 - **UI enhancement**: Use Bootstrap components, maintain toast/modal patterns
 
+## Version Control & Change Management
+**CRITICAL WORKFLOW**: Always create a commit before making any suggested changes for backup and version control.
+
+### Pre-change workflow:
+1. **Before making ANY changes**: Create a commit with current state
+2. **Use clear commit messages** that explain what will be changed (e.g., "feat: prepare for authentication refactor", "fix: backup before process management updates")
+3. **After implementing changes**: Suggest a follow-up commit command with descriptive message
+
+### Commit message patterns:
+- `feat: add [feature description]` — new functionality
+- `fix: resolve [issue description]` — bug fixes  
+- `refactor: improve [component/area]` — code restructuring
+- `docs: update [documentation area]` — documentation changes
+- `chore: [maintenance task]` — dependency updates, build changes
+
+### Example workflow:
+```bash
+# Before making changes
+git add -A
+git commit -m "feat: prepare for new API endpoint integration"
+
+# [Make suggested changes to files]
+
+# After changes are complete
+git add -A  
+git commit -m "feat: implement new system status API endpoint"
+```
+
+**Always suggest the commit command** after completing any code changes, using the appropriate commit message pattern and clear description of what was implemented.
+
 ## Known limitations
 - File version detection is simplified (needs Windows-specific implementation)
 - Download progress not implemented (could add progress events)
