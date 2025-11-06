@@ -35,8 +35,8 @@ let currentUser = null;
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1024,
-    height: 768,
+    width: 520,
+    height: 720,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -348,19 +348,77 @@ ipcMain.handle('kill-process', (event, pid) => {
 // File operations
 ipcMain.handle('launch-exe', async (event, exePath, args = []) => {
   try {
-    if (!fs.existsSync(exePath)) {
-      return { success: false, message: 'Arquivo não encontrado: ' + exePath };
+    console.log(`launch-exe exePath: ${exePath}`);
+    // Try multiple normalized paths before failing to give clearer diagnostics.
+    const tried = [];
+
+    function pushTry(p) {
+      if (!p) return;
+      const normalized = path.normalize(p);
+      if (!tried.includes(normalized)) tried.push(normalized);
     }
 
-    const process = spawn(exePath, args, {
-      detached: true,
-      stdio: 'ignore',
-      cwd: path.dirname(exePath)
+    pushTry(exePath);
+    pushTry(path.resolve(exePath));
+    // If path looks like 'D:Something' (missing backslash), insert one: 'D:\Something'
+    if (/^[a-zA-Z]:[^\\\/]/.test(exePath)) {
+      pushTry(exePath.replace(/^([a-zA-Z]:)/, '$1\\'));
+    }
+    // If it's a plain filename, try joining with configured caminhoExecLocal
+    if (!exePath.includes('\\') && !exePath.includes('/')) {
+      if (appConfig.caminhoExecLocal) pushTry(path.join(appConfig.caminhoExecLocal, exePath));
+    }
+
+    // Finally, try with a trailing backslash on caminhoExecLocal if present
+    if (appConfig.caminhoExecLocal) {
+      const base = appConfig.caminhoExecLocal;
+      if (!base.endsWith('\\') && !base.endsWith('/')) pushTry(path.join(base + '\\', exePath));
+    }
+
+    // Find first existing path
+    let found = tried.find(p => {
+      try { return fs.existsSync(p); } catch { return false; }
     });
 
-    process.unref();
-    
-    return { success: true };
+    // If not found yet, attempt to detect a missing separator between an existing folder
+    // and the rest of the filename. Example: "D:\ExecSHEVendas.exe" should be
+    // split as "D:\ExecSHE" + "Vendas.exe" -> "D:\ExecSHE\Vendas.exe".
+    if (!found) {
+      try {
+        for (let i = 3; i < exePath.length - 1; i++) {
+          const left = exePath.slice(0, i);
+          const right = exePath.slice(i);
+          try {
+            if (fs.existsSync(left) && fs.statSync(left).isDirectory()) {
+              const candidate = path.join(left, right);
+              pushTry(candidate);
+              if (fs.existsSync(candidate)) {
+                found = candidate;
+                break;
+              }
+            }
+          } catch (e) {
+            // ignore and continue
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    if (!found) {
+      // Return clearer error listing the attempted paths
+      return { success: false, message: 'Arquivo não encontrado: ' + exePath, tried };
+    }
+
+    const proc = spawn(found, args, {
+      detached: true,
+      stdio: 'ignore',
+      cwd: path.dirname(found)
+    });
+
+    proc.unref();
+    return { success: true, launched: found };
   } catch (error) {
     console.error('Launch exe error:', error.message);
     return { success: false, message: error.message };

@@ -1,83 +1,16 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login CDI</title>
-
-  <!-- Bootstrap CSS -->
   <link rel="stylesheet" href="assets/css/bootstrap.min.css">
-  
-  <!-- Bootstrap Icons -->
   <link rel="stylesheet" href="assets/css/bootstrap-icons.css">
+  <link rel="stylesheet" href="assets/css/login.css">
 
-  <style>
-    .bg-brand {
-      background: linear-gradient(135deg, #023c54 0%, #034a69 100%);
-      min-height: 100vh;
-    }
-
-    .login-bg {
-      background: linear-gradient(135deg, #023c54 0%, #034a69 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .login-card {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border: none !important;
-    }
-
-    .loading-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(0, 0, 0, 0.7);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-    }
-
-    .toast-container {
-      z-index: 10000;
-    }
-
-    .form-floating > .form-control {
-      height: calc(3.5rem + 2px);
-    }
-
-    .btn-primary {
-      background-color: #023c54 !important;
-      border-color: #023c54 !important;
-    }
-
-    .btn-primary:hover {
-      background-color: #034a69 !important;
-      border-color: #034a69 !important;
-    }
-
-    .animate-fade-in {
-      animation: fadeInDown 0.8s ease-out;
-    }
-
-    @keyframes fadeInDown {
-      from {
-        opacity: 0;
-        transform: translateY(-30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  </style>
 </head>
+
 <body class="bg-brand">
 
   <!-- Loading Overlay -->
@@ -89,23 +22,27 @@
 
   <!-- Toast Container -->
   <div class="toast-container position-fixed bottom-0 end-0 p-3">
-    <div id="error-toast" class="toast align-items-center text-bg-danger border-0" role="alert" aria-live="assertive" aria-atomic="true">
+    <div id="error-toast" class="toast align-items-center text-bg-danger border-0" role="alert" aria-live="assertive"
+      aria-atomic="true">
       <div class="d-flex">
         <div class="toast-body" id="toast-message">
           <!-- Error message will be inserted here -->
         </div>
-        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"
+          aria-label="Close"></button>
       </div>
     </div>
   </div>
 
-  <div class="container d-flex justify-content-center">
+  <div class="container d-flex justify-content-center bg-login">
     <div class="login-bg">
-      <div class="card shadow-lg p-4 rounded-4 login-card animate-fade-in" style="max-width: 380px; width: 100%; max-height: 480px;">
-        
+      <div class="card shadow-lg p-4 rounded-4 login-card animate-fade-in"
+        style="max-width: 380px; width: 100%; max-height: 480px;">
+
         <div class="mb-4 d-flex justify-content-center">
-          <img id="img-login" class="p-1" src="assets/images/logo.png" alt="CDI Logo" style="width:50%; height:50%;" 
-               onerror="this.style.display='none'; document.getElementById('logo-text').style.display='block';">
+          <img id="img-login" class="p-1" src="assets/images/logo-claro.png" alt="CDI Logo"
+            style="width:50%; height:50%;"
+            onerror="this.style.display='none'; document.getElementById('logo-text').style.display='block';">
           <h3 id="logo-text" style="display: none; color: #023c54; font-weight: bold;">MenuCDI</h3>
         </div>
 
@@ -114,12 +51,16 @@
             <input type="text" id="username" class="form-control" placeholder="Usuário" maxlength="3" required>
             <label for="username">Usuário</label>
           </div>
-          
-          <div class="form-floating mb-3">
+
+          <div class="form-floating mb-3 position-relative">
             <input type="password" id="password" class="form-control" placeholder="Senha" required>
             <label for="password">Senha</label>
+
+            <!-- Eye icon positioned inside the input -->
+            <i id="togglePassword" class="bi bi-eye-slash"
+              style="position: absolute; top: 50%; right: 12px; transform: translateY(-50%); cursor: pointer;"></i>
           </div>
-          
+
           <button id="btn-login" class="btn btn-primary w-100 py-2 mt-2" type="submit">
             <i class="bi bi-box-arrow-in-right me-2"></i>Login
           </button>
@@ -132,148 +73,8 @@
     </div>
   </div>
 
-  <!-- Bootstrap JS + Popper -->
   <script src="assets/js/bootstrap.bundle.min.js"></script>
-
-  <script>
-    // Global state
-    let isLoading = false;
-
-    // DOM elements
-    const loadingOverlay = document.getElementById('loading-overlay');
-    const loginForm = document.getElementById('loginForm');
-    const usernameInput = document.getElementById('username');
-    const passwordInput = document.getElementById('password');
-    const loginButton = document.getElementById('btn-login');
-    const errorToast = document.getElementById('error-toast');
-    const toastMessage = document.getElementById('toast-message');
-
-    // Utility functions
-    function showLoading(state) {
-      isLoading = state;
-      loadingOverlay.style.display = state ? 'flex' : 'none';
-      loginButton.disabled = state;
-      
-      if (state) {
-        loginButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Entrando...';
-      } else {
-        loginButton.innerHTML = '<i class="bi bi-box-arrow-in-right me-2"></i>Login';
-      }
-    }
-
-    function showError(message) {
-      toastMessage.textContent = message;
-      const toast = new bootstrap.Toast(errorToast, { delay: 8000 });
-      toast.show();
-    }
-
-    function handleUserInput(event) {
-      // Convert to uppercase as user types (like MAUI version)
-      event.target.value = event.target.value.toUpperCase();
-    }
-
-    // Event listeners
-    usernameInput.addEventListener('input', handleUserInput);
-
-    loginForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      const username = usernameInput.value.trim();
-      const password = passwordInput.value.trim();
-
-      if (!username || !password) {
-        showError('Por favor, preencha usuário e senha');
-        return;
-      }
-
-      try {
-        showLoading(true);
-
-        // Check API status first
-        const apiStatus = await window.electronAPI.checkApiStatus();
-        if (!apiStatus) {
-          const config = await window.electronAPI.getConfig();
-          showError(`⚠️ O servidor está offline. Verifique sua conexão e tente novamente.\n${config.apiBaseUrl}`);
-          return;
-        }
-
-        // Attempt login
-        const loginResult = await window.electronAPI.login({
-          username: username,
-          password: password
-        });
-
-        if (loginResult.success) {
-          // Store user preferences if needed
-          localStorage.setItem('lastUsername', username);
-          
-          // Navigate to main menu
-          await window.electronAPI.navigateToMain();
-        } else {
-          showError(loginResult.message || 'Erro ao efetuar login');
-        }
-
-      } catch (error) {
-        console.error('Login error:', error);
-        showError('Erro inesperado ao efetuar login: ' + error.message);
-      } finally {
-        showLoading(false);
-      }
-    });
-
-    // Initialize page
-    document.addEventListener('DOMContentLoaded', async () => {
-      try {
-        // Load last username if available
-        const lastUsername = localStorage.getItem('lastUsername');
-        if (lastUsername) {
-          usernameInput.value = lastUsername;
-          passwordInput.focus();
-        } else {
-          usernameInput.focus();
-        }
-
-        // Check if already authenticated
-        const authState = await window.electronAPI.getAuthState();
-        if (authState.isAuthenticated) {
-          await window.electronAPI.navigateToMain();
-          return;
-        }
-
-        // Check API status on load
-        try {
-          const apiStatus = await window.electronAPI.checkApiStatus();
-          if (!apiStatus) {
-            const config = await window.electronAPI.getConfig();
-            if (config.apiBaseUrl) {
-              showError(`⚠️ Servidor offline: ${config.apiBaseUrl}`);
-            } else {
-              showError('⚠️ URL da API não configurada. Verifique as variáveis de ambiente.');
-            }
-          }
-        } catch (error) {
-          console.error('API status check failed:', error);
-        }
-
-      } catch (error) {
-        console.error('Page initialization error:', error);
-        showError('Erro ao inicializar a página');
-      }
-    });
-
-    // Handle Enter key navigation
-    usernameInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        passwordInput.focus();
-      }
-    });
-
-    passwordInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        loginForm.dispatchEvent(new Event('submit'));
-      }
-    });
-  </script>
-
+  <script src="assets/js/login.js"></script>
 </body>
+
 </html>

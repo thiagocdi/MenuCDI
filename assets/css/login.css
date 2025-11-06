@@ -1,84 +1,68 @@
-/* Styles extracted from login.html */
 .bg-brand {
-  background: linear-gradient(135deg, #023c54 0%, #034a69 100%);
-  min-height: 100vh;
-}
+      background: #2b3035;
+      min-height: 100vh;
+    }
 
-.login-bg {
-  background: linear-gradient(135deg, #023c54 0%, #034a69 100%);
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+    .login-bg {
+      background: #2b3035;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-.login-card {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border: none !important;
-  color: #212529;
-}
+    .bg-login {
+      background-color: #2b3035;
+    }
 
-.loading-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-}
+    .login-card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border: none !important;
+    }
 
-.toast-container {
-  z-index: 10000;
-}
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.7);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
 
-.form-floating > .form-control {
-  height: calc(3.5rem + 2px);
-}
+    .toast-container {
+      z-index: 10000;
+    }
 
-/* Dark-style form controls */
-.form-control {
-  background-color: rgba(255,255,255,0.03) !important;
-  color: #e9ecef !important;
-  border: 1px solid rgba(255,255,255,0.08) !important;
-}
+    .form-floating > .form-control {
+      height: calc(3.5rem + 2px);
+    }
 
-.form-control::placeholder {
-  color: rgba(233,238,239,0.6) !important;
-}
+    .btn-primary {
+      background-color: #023c54 !important;
+      border-color: #023c54 !important;
+    }
 
-.form-floating > label {
-  color: rgba(233,238,239,0.85) !important;
-}
+    .btn-primary:hover {
+      background-color: #034a69 !important;
+      border-color: #034a69 !important;
+    }
 
-.btn-primary {
-  background-color: #023c54 !important;
-  border-color: #023c54 !important;
-}
+    .animate-fade-in {
+      animation: fadeInDown 0.8s ease-out;
+    }
 
-.btn-primary:hover {
-  background-color: #034a69 !important;
-  border-color: #034a69 !important;
-}
-
-.animate-fade-in {
-  animation: fadeInDown 0.8s ease-out;
-}
-
-@keyframes fadeInDown {
-  from {
-    opacity: 0;
-    transform: translateY(-30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* small adjustments for login visuals */
-#img-login { max-width: 50%; }
+    @keyframes fadeInDown {
+      from {
+        opacity: 0;
+        transform: translateY(-30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
