@@ -84,7 +84,8 @@ async function initializePage() {
 
         currentUser = authState.user;
         //usernameDisplay.textContent = currentUser?.username || "Usuário";
-        usernameDisplay.textContent = localStorage.getItem("userName") || "Usuário";
+        usernameDisplay.textContent =
+            localStorage.getItem("userName") || "Usuário";
 
         // Load configuration
         appConfig = await window.electronAPI.getConfig();
@@ -93,13 +94,12 @@ async function initializePage() {
         await loadMenuSystems();
 
         if (version) {
-           version.textContent = await window.electronAPI.getVersion();
+            version.textContent = await window.electronAPI.getVersion();
         }
 
         if (filial) {
             filial.textContent = localStorage.getItem("filial") || "";
         }
-
     } catch (error) {
         console.error("Initialization error:", error);
         showError("Erro ao inicializar aplicação: " + error.message);
@@ -300,3 +300,37 @@ logoutBtn.addEventListener("click", async () => {
 
 // Initialize page when DOM is loaded
 document.addEventListener("DOMContentLoaded", initializePage);
+
+function abrirAnyDesk() {
+    var downloadUrl = "https://anydesk.com/pt/downloads/thank-you?dv=win_exe";
+    var protocolUrl = "anydesk:";
+
+    var opened = false;
+
+    // Detect if user left the page (app opened)
+    var blurHandler = function () {
+        opened = true;
+        window.removeEventListener("blur", blurHandler);
+    };
+    window.addEventListener("blur", blurHandler);
+
+    // Try to open AnyDesk via hidden iframe
+    var iframe = document.createElement("iframe");
+    iframe.style.display = "none";
+    iframe.src = protocolUrl;
+    document.body.appendChild(iframe);
+
+    // Fallback after 1.5s
+    setTimeout(function () {
+        document.body.removeChild(iframe);
+        if (!opened) {
+            window.open(downloadUrl, "_blank");
+        }
+    }, 1500);
+}
+
+function abrirWhatsApp() {
+    var phoneNumber = "553584653219";
+    var whatsappUrl = "https://wa.me/" + phoneNumber;
+    window.open(whatsappUrl, "_blank");
+}

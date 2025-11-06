@@ -1,10 +1,15 @@
+// Módulos do Electron e Node.js usados pela aplicação
+// - app / BrowserWindow: controle da janela principal e ciclo de vida
+// - ipcMain: handlers para comunicação renderer -> main (invokes)
+// - shell: abrir caminhos/URLs no SO (p.ex. abrir pasta/exe)
+// - nativeImage: carregar imagens/icones nativos (para taskbar)
 const { app, BrowserWindow, ipcMain, shell, nativeImage } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const axios = require('axios');
-const StreamZip = require('node-stream-zip');
-const { spawn, exec } = require('child_process');
-const os = require('os');
+const path = require('path'); // manipulação de caminhos cross-platform
+const fs = require('fs'); // acesso ao sistema de arquivos
+const axios = require('axios'); // cliente HTTP para chamadas de API
+const StreamZip = require('node-stream-zip'); // leitura/extração de ZIPs (usado em updates)
+const { spawn, exec } = require('child_process'); // spawn/exec para gerenciar processos
+const os = require('os'); // informações do sistema
 
 // Configuration
 let appConfig = {
@@ -12,17 +17,29 @@ let appConfig = {
   caminhoExecLocal: process.env.CDI_CAMINHO_EXEC_LOCAL || ''
 };
 
-// Normalize API base: ensure it ends with '/api' (no trailing slash)
+/**
+ * normalizeApiBase(url)
+ *
+ * Normaliza a URL base da API garantindo que termine com '/api' sem barras
+ * extras. Aceita strings vazias e retorna a mesma entrada quando vazia.
+ *
+ * Por que: várias versões do backend usam ou não o sufixo '/api'.
+ * Padronizando aqui evitamos construir URLs inconsistentes pelo código.
+ *
+ * @param {string} url - URL base fornecida via variável de ambiente/config
+ * @returns {string} url normalizada terminando em '/api' (sem barra final)
+ */
 function normalizeApiBase(url) {
   if (!url) return url;
-  // Trim whitespace
+  // remove espaços em branco nas pontas
   url = url.trim();
-  // Remove trailing slashes
-  url = url.replace(/\/+$|\s+$/g, '');
+  // remove barras finais redundantes
+  url = url.replace(/\/+$/g, '');
+  // se não terminar em '/api', anexa
   if (!/\/api$/i.test(url)) {
-    // Remove any trailing slash then append /api
-    url = url.replace(/\/+$/g, '') + '/api';
+    url = url + '/api';
   }
+  // garante que não tenha barra final
   return url.replace(/\/+$/g, '');
 }
 
@@ -43,8 +60,20 @@ if (process.platform === 'win32') {
   }
 }
 
+/**
+ * createWindow()
+ *
+ * Cria a janela principal da aplicação Electron. Configura o ícone
+ * (dev) e as preferências de webContents (preload, contextIsolation).
+ * Mantemos configurações mínimas compatíveis com Windows e segurança.
+ *
+ * Observações:
+ * - `useContentSize` não é aplicado aqui, escolhemos dimensões do frame
+ * - Caso queira persistir posição/tamanho do usuário, implementar um
+ *   armazenamento de estado (não implementado neste patch)
+ */
 function createWindow() {
-  // Prepare icon for dev runs
+  // Tenta carregar o ícone local para mostrar durante desenvolvimento
   const iconPath = path.join(__dirname, 'assets', 'images', 'icon.ico');
   let iconImage = null;
   try {
@@ -52,23 +81,26 @@ function createWindow() {
       iconImage = nativeImage.createFromPath(iconPath);
     }
   } catch (e) {
+    // se algo falhar no carregamento do ícone, apenas ignoramos e continuamos
     iconImage = null;
   }
 
   const win = new BrowserWindow({
-    width: 520,
+    width: 420,
     height: 700,
     icon: iconImage || undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
+      // por segurança, mantemos nodeIntegration desligado e contextIsolation ligado
       nodeIntegration: false,
       contextIsolation: true
     }
   });
 
+  // Carrega a tela de login como página inicial
   win.loadFile('login.html');
-  
-  // Only open dev tools in development
+
+  // Em ambiente de desenvolvimento abrimos as DevTools para facilitar debug
   if (process.env.NODE_ENV === 'development') {
     win.webContents.openDevTools();
   }
@@ -83,10 +115,21 @@ app.on('window-all-closed', () => {
 });
 
 // Configuration handlers
+/**
+ * Handler: get-config
+ * Retorna a configuração atual carregada no processo principal.
+ * Usado pelo renderer para obter valores como apiBaseUrl e caminhoExecLocal.
+ */
 ipcMain.handle('get-config', () => {
   return appConfig;
 });
 
+/**
+ * Handler: set-config
+ * Atualiza uma chave de configuração armazenada em memória no main process.
+ * - Se a chave for `apiBaseUrl`, normalizamos o valor via normalizeApiBase.
+ * Retorna true se a atualização foi aplicada.
+ */
 ipcMain.handle('set-config', (event, key, value) => {
   if (key === 'apiBaseUrl') {
     appConfig[key] = normalizeApiBase(value);
@@ -97,63 +140,99 @@ ipcMain.handle('set-config', (event, key, value) => {
 });
 
 // Auth API handlers
+/**
+ * Handler: api-status
+ * Verifica se a API está acessível. Útil para mostrar erros de conectividade
+ * antes do usuário tentar logar.
+ * Retorna booleano (true = API respondeu 200).
+ */
 ipcMain.handle('api-status', async () => {
   try {
     if (!appConfig.apiBaseUrl) return false;
     const response = await axios.get(`${appConfig.apiBaseUrl}/status`, { timeout: 5000 });
     return response.status === 200;
   } catch (error) {
+    // Log seguro: evite serializar objetos grandes/circulares
     console.error('API Status error:', error.message, error.response ? error.response.data : '');
     return false;
   }
 });
 
-ipcMain.handle('api-login', async (event, { username, password }) => {
+/**
+ * Handler: api-login
+ * Faz a chamada de login para a API. Mapeamos o formato esperado pelo backend
+ * e normalizamos tokens/objetos retornados.
+ * Retornos possíveis:
+ * - { success: true, user, token, ... }
+ * - { success: false, message }
+ */
+ipcMain.handle('api-login', async (event, { username, password, newPassword = '' }) => {
   try {
-    let response;
-    response = await axios.post(`${appConfig.apiBaseUrl}/loginMenu`, {
+    // Chamada principal ao endpoint de login (padrão documentado neste projeto)
+    let response = await axios.post(`${appConfig.apiBaseUrl}/loginMenu`, {
       Username: username,
-      Password: password
+      Password: password,
+      NewPassword: newPassword
     });
 
-    // Sample /login returns { accessToken, refreshToken, ... }
     if (response && response.data) {
-
+      // Alguns backends retornam accessToken ou token; aceitamos ambos
       const token = response.data.accessToken || response.data.access_token || response.data.token;
       if (token) {
         authToken = token;
-        // The sample doesn't always include a full user object; store minimal info
+        // Armazena informação mínima do usuário (pode ser enriquecida conforme API)
         currentUser = { username };
-        return { success: true, user: currentUser, userName: (response.data.user.name || ''),  token: authToken, companyName: (response.data.user.companyName || '') };
+        return {
+          success: true,
+          user: currentUser,
+          userName: (response.data.user && response.data.user.name) || '',
+          token: authToken,
+          companyName: (response.data.user && response.data.user.companyName) || ''
+        };
       }
 
-      // If login failed with a message
+      // Se login falhou, o backend pode retornar uma mensagem explicativa
       return { success: false, message: response.data.message || 'Login falhou' };
     }
 
     return { success: false, message: 'Login falhou' };
   } catch (error) {
+    // Log detalhado para debug: não serializamos objetos circulares
     console.error('Login error:', error.message, error.response ? error.response.data : '');
     const body = error.response && error.response.data ? (typeof error.response.data === 'string' ? error.response.data : JSON.stringify(error.response.data)) : error.message;
     return { success: false, message: `Erro ao conectar com o servidor: ${body}` };
   }
 });
 
+/**
+ * Handler: api-logout
+ * Limpa o estado de autenticação mantido no processo principal.
+ */
 ipcMain.handle('api-logout', () => {
   authToken = null;
   currentUser = null;
   return true;
 });
 
+/**
+ * Handler: get-auth-state
+ * Retorna o estado atual de autenticação para o renderer (usado em inicialização).
+ */
 ipcMain.handle('get-auth-state', () => {
-  return { 
-    isAuthenticated: !!authToken, 
-    user: currentUser, 
-    token: authToken 
+  return {
+    isAuthenticated: !!authToken,
+    user: currentUser,
+    token: authToken
   };
 });
 
-// Menu/Systems API handlers
+/**
+ * Handler: api-get-systems
+ * Busca a lista de sistemas/sistemasMenu disponíveis para o usuário autenticado.
+ * - Tenta um endpoint "legado" primeiro (/sistemas/menu) e depois a rota
+ *   documentada (/sistemasMenu). Também descompacta a resposta caso o backend
+ *   envolva um wrapper ApiResponse<T> (campo `data`).
+ */
 ipcMain.handle('api-get-systems', async () => {
   try {
     if (!authToken) throw new Error('Not authenticated');
@@ -188,6 +267,12 @@ ipcMain.handle('api-get-systems', async () => {
   }
 });
 
+/**
+ * Handler: api-get-system-version
+ * Recupera a versão do sistema remoto (usada para comparar com a versão local
+ * e decidir se há necessidade de download/atualização).
+ * - Tenta rota legada e depois `/sistema?IdSistema=...` conforme o sample API.
+ */
 ipcMain.handle('api-get-system-version', async (event, systemId) => {
   try {
     if (!authToken) throw new Error('Not authenticated');
@@ -223,6 +308,17 @@ ipcMain.handle('api-get-system-version', async (event, systemId) => {
   }
 });
 
+/**
+ * Handler: api-download-system
+ * Faz download do binário/zip do sistema no backend como stream e grava em
+ * disco na pasta tmp (dentro de appConfig.caminhoExecLocal ou pasta tmp do SO).
+ * Retorna { success: true, path } apontando para o arquivo temporário baixado.
+ *
+ * Observações de implementação:
+ * - Usamos responseType: 'stream' e gravamos com createWriteStream para evitar
+ *   serializar objetos de stream sobre IPC (causa erros de circular refs).
+ * - Caso o backend retorne Content-Disposition com filename, usamos esse nome.
+ */
 ipcMain.handle('api-download-system', async (event, systemId) => {
   try {
     if (!authToken) throw new Error('Not authenticated');
@@ -287,7 +383,13 @@ ipcMain.handle('api-download-system', async (event, systemId) => {
   }
 });
 
-// Process management handlers
+
+/**
+ * Handler: check-process
+ * Verifica se existe um processo em execução com o nome fornecido.
+ * Retorna um array de objetos { name, pid } (no Windows) ou lista de PIDs no Linux.
+ * Utiliza comandos nativos (`tasklist` no Windows, `pgrep` em Unix) para compatibilidade.
+ */
 ipcMain.handle('check-process', (event, processName) => {
   return new Promise((resolve) => {
     const command = process.platform === 'win32' 
@@ -320,6 +422,10 @@ ipcMain.handle('check-process', (event, processName) => {
   });
 });
 
+/**
+ * Handler: kill-process
+ * Mata um processo pelo PID. Retorna true se a operação aparentemente teve sucesso.
+ */
 ipcMain.handle('kill-process', (event, pid) => {
   return new Promise((resolve) => {
     const command = process.platform === 'win32' 
@@ -332,7 +438,23 @@ ipcMain.handle('kill-process', (event, pid) => {
   });
 });
 
-// File operations
+
+/**
+ * Handler: launch-exe
+ * Tenta lançar o executável indicado por `exePath` com argumentos `args`.
+ * Estratégia aplicada:
+ * 1. Gera uma lista de caminhos candidatos normalizados (path.normalize / resolve).
+ * 2. Se detectar formatos comuns faltando separador (como "D:\\ExecSHEVendas.exe"),
+ *    tenta dividir a string onde o lado esquerdo é um diretório existente e junta com o resto.
+ * 3. Se um candidato existir, usa spawn(...) com detached=true para lançar o processo
+ *    de forma independente do Electron.
+ * 4. Retorna objetos ricos contendo `success`, `launched` ou `tried` para ajudar no debug.
+ *
+ * Observações:
+ * - Evitamos lançar caminhos inválidos diretamente; sempre verificamos fs.existsSync
+ * - O retorno `tried` facilita diagnosticar porque um caminho não foi encontrado
+ *   (útil quando um nome foi concatenado sem barra, por exemplo).
+ */
 ipcMain.handle('launch-exe', async (event, exePath, args = []) => {
   try {
     console.log(`launch-exe exePath: ${exePath}`);
@@ -412,6 +534,13 @@ ipcMain.handle('launch-exe', async (event, exePath, args = []) => {
   }
 });
 
+/**
+ * Handler: get-file-version
+ * Retorna uma indicação simples de versão do arquivo local. Atualmente
+ * devolve um objeto com `version` (placeholder) e `modified` (mtime).
+ * Nota: para um produto real, implementar leitura de versão do arquivo
+ * (ex.: recurso de versão em exe no Windows) em vez deste placeholder.
+ */
 ipcMain.handle('get-file-version', (event, filePath) => {
   try {
     if (!fs.existsSync(filePath)) {
@@ -431,6 +560,11 @@ ipcMain.handle('get-file-version', (event, filePath) => {
   }
 });
 
+/**
+ * Handler: ensure-directory
+ * Garante que o diretório exista (cria de forma recursiva se necessário).
+ * Retorna true em sucesso, false em falha.
+ */
 ipcMain.handle('ensure-directory', (event, dirPath) => {
   try {
     if (!fs.existsSync(dirPath)) {
@@ -443,6 +577,12 @@ ipcMain.handle('ensure-directory', (event, dirPath) => {
   }
 });
 
+/**
+ * Handler: move-file
+ * Move/renomeia um arquivo no filesystem. Retorna true/false indicando sucesso.
+ * Observação: fs.renameSync pode falhar se o destino estiver em outro volume;
+ * em situações mais complexas, usar copy+unlink.
+ */
 ipcMain.handle('move-file', (event, source, destination) => {
   try {
     fs.renameSync(source, destination);
@@ -453,17 +593,30 @@ ipcMain.handle('move-file', (event, source, destination) => {
   }
 });
 
-// Navigation handler
+
+/**
+ * Handler: navigate-to-main
+ * Carrega a página principal (index.html) na janela que requisitou a navegação.
+ */
 ipcMain.handle('navigate-to-main', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   win.loadFile('index.html');
 });
 
+/**
+ * Handler: navigate-to-login
+ * Carrega a tela de login (login.html) na janela que requisitou.
+ */
 ipcMain.handle('navigate-to-login', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   win.loadFile('login.html');
 });
 
+/**
+ * Handler: get-app-version
+ * Retorna a versão da aplicação (definida em package.json) para exibição
+ * no renderer ou para uso em lógica de atualização.
+ */
 ipcMain.handle('get-app-version', () => {
   return app.getVersion();
 });

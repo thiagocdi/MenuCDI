@@ -14,6 +14,10 @@ const errorToast = document.getElementById("error-toast");
 const toastMessage = document.getElementById("toast-message");
 const togglePassword = document.getElementById("togglePassword");
 
+const newPasswordContainer = document.getElementById("new-password-container");
+const newPasswordInput = document.getElementById("newPassword");
+const toggleNewPassword = document.getElementById("toggleNewPassword");
+
 togglePassword.addEventListener("click", () => {
     const type =
         passwordInput.getAttribute("type") === "password" ? "text" : "password";
@@ -22,6 +26,16 @@ togglePassword.addEventListener("click", () => {
     // toggle icon classes
     togglePassword.classList.toggle("bi-eye");
     togglePassword.classList.toggle("bi-eye-slash");
+});
+
+toggleNewPassword.addEventListener("click", () => {
+    const type =
+        newPasswordInput.getAttribute("type") === "password" ? "text" : "password";
+    newPasswordInput.setAttribute("type", type);
+
+    // toggle icon classes
+    toggleNewPassword.classList.toggle("bi-eye");
+    toggleNewPassword.classList.toggle("bi-eye-slash");
 });
 
 // Utility functions
@@ -48,6 +62,12 @@ function showError(message) {
 function handleUserInput(event) {
     // Convert to uppercase as user types (like MAUI version)
     event.target.value = event.target.value.toUpperCase();
+    // wait for 50ms and focus on password input if username length is 3
+    if (event.target.id === "username" && event.target.value.length === 3) {
+        setTimeout(() => {
+            passwordInput.focus();
+        }, 50);
+    }
 }
 
 // Event listeners
@@ -58,9 +78,15 @@ loginForm.addEventListener("submit", async (e) => {
 
     const username = usernameInput.value.trim();
     const password = passwordInput.value.trim();
+    const newPassword = newPasswordInput.value.trim();
 
     if (!username || !password) {
         showError("Por favor, preencha usuário e senha");
+        return;
+    }
+
+    if (newPasswordContainer.classList.contains("d-none") === false && !newPassword) {
+        showError("Por favor, preencha a nova senha");
         return;
     }
 
@@ -81,6 +107,7 @@ loginForm.addEventListener("submit", async (e) => {
         const loginResult = await window.electronAPI.login({
             username: username,
             password: password,
+            newPassword: newPasswordContainer.classList.contains("d-none") ? null : newPassword
         });
 
         if (loginResult.success) {
@@ -160,3 +187,7 @@ passwordInput.addEventListener("keypress", (e) => {
         loginForm.dispatchEvent(new Event("submit"));
     }
 });
+
+function trocarSenha() {
+    newPasswordContainer.classList.remove("d-none");
+}
