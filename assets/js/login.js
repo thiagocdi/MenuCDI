@@ -84,8 +84,15 @@ loginForm.addEventListener("submit", async (e) => {
         });
 
         if (loginResult.success) {
+            console.log("loginResult.success")
+            console.log(loginResult)
+
+            console.log("companyName", loginResult.companyName)
+
             // Store user preferences if needed
             localStorage.setItem("lastUsername", username);
+            localStorage.setItem("filial", loginResult.companyName);
+            localStorage.setItem("userName", loginResult.userName);
 
             // Navigate to main menu
             await window.electronAPI.navigateToMain();

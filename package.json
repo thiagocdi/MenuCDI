@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "build-legacy": "electron-builder --win --x64 --config.electronVersion=13.6.9"
+    "build-legacy": "electron-builder --win --x64 --config.electronVersion=13.6.9 --config.directories.output=dist/legacy"
   },
   "dependencies": {
     "axios": "^1.6.0",
@@ -28,7 +28,7 @@
     },
     "win": {
       "target": "portable",
-      "icon": "icon.ico"
+      "icon": "assets/images/icon.ico"
     }
   }
 }

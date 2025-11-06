@@ -14,6 +14,8 @@ const errorToast = document.getElementById("error-toast");
 const successToast = document.getElementById("success-toast");
 const toastMessage = document.getElementById("toast-message");
 const successMessage = document.getElementById("success-message");
+const version = document.getElementById("versao");
+const filial = document.getElementById("filial");
 const confirmModal = new bootstrap.Modal(
     document.getElementById("confirmModal")
 );
@@ -81,13 +83,23 @@ async function initializePage() {
         }
 
         currentUser = authState.user;
-        usernameDisplay.textContent = currentUser?.username || "Usuário";
+        //usernameDisplay.textContent = currentUser?.username || "Usuário";
+        usernameDisplay.textContent = localStorage.getItem("userName") || "Usuário";
 
         // Load configuration
         appConfig = await window.electronAPI.getConfig();
 
         // Load menu systems
         await loadMenuSystems();
+
+        if (version) {
+           version.textContent = await window.electronAPI.getVersion();
+        }
+
+        if (filial) {
+            filial.textContent = localStorage.getItem("filial") || "";
+        }
+
     } catch (error) {
         console.error("Initialization error:", error);
         showError("Erro ao inicializar aplicação: " + error.message);
@@ -276,6 +288,7 @@ logoutBtn.addEventListener("click", async () => {
 
     if (confirmLogout) {
         try {
+            localStorage.removeItem("filial");
             await window.electronAPI.logout();
             await window.electronAPI.navigateToLogin();
         } catch (error) {

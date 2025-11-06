@@ -4,7 +4,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>MenuCDI Launcher</title>
+	<title>Menu CDI</title>
 
 	<!-- Bootstrap CSS -->
 	<link rel="stylesheet" href="assets/css/bootstrap.min.css">
@@ -41,7 +41,7 @@
 			<a class="navbar-brand d-flex align-items-center">
 				<img src="assets/images/logo.png" alt="Logo" height="30" class="me-2">
 				<div class="d-flex flex-column lh-1">
-					<span class="empresa-nome">@nomeEmpresa</span>
+					<span id="filial" class="empresa-nome">@nomeEmpresa</span>
 					<span class="mt-1" id="username-display" style="font-size: 10px; color: #ccc;"></span>
 				</div>
 			</a>
@@ -59,7 +59,7 @@
 	<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
 
 	<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-		<nav class="flex-column">
+		<nav class="flex-column" style="background-color: #2b3035; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;">
 			<div class="nav-item px-3">
 				<div class="d-grid gap-2 col-6 mx-auto">
 					<button type="button" class="btn btn-success" onclick="abrirWhatsApp()">

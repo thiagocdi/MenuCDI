@@ -28,5 +28,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Navigation
   navigateToMain: () => ipcRenderer.invoke('navigate-to-main'),
-  navigateToLogin: () => ipcRenderer.invoke('navigate-to-login')
+  navigateToLogin: () => ipcRenderer.invoke('navigate-to-login'),
+
+  // App version
+  getVersion: () => ipcRenderer.invoke('get-app-version')
 });

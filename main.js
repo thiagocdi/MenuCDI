@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const axios = require('axios');
@@ -32,11 +32,33 @@ appConfig.apiBaseUrl = normalizeApiBase(appConfig.apiBaseUrl);
 // Auth state
 let authToken = null;
 let currentUser = null;
+let currentCompany = null;
+
+// Ensure AppUserModelId is set on Windows so taskbar icons and notifications work correctly
+if (process.platform === 'win32') {
+  try {
+    app.setAppUserModelId(appConfig.appId || 'com.cdi.menu');
+  } catch (e) {
+    // ignore if not supported
+  }
+}
 
 function createWindow() {
+  // Prepare icon for dev runs
+  const iconPath = path.join(__dirname, 'assets', 'images', 'icon.ico');
+  let iconImage = null;
+  try {
+    if (fs.existsSync(iconPath)) {
+      iconImage = nativeImage.createFromPath(iconPath);
+    }
+  } catch (e) {
+    iconImage = null;
+  }
+
   const win = new BrowserWindow({
     width: 520,
-    height: 720,
+    height: 700,
+    icon: iconImage || undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -88,56 +110,21 @@ ipcMain.handle('api-status', async () => {
 
 ipcMain.handle('api-login', async (event, { username, password }) => {
   try {
-    // Try legacy/auth path first (some deployments use /auth/login)
     let response;
-    try {
-      response = await axios.post(`${appConfig.apiBaseUrl}/auth/login`, {
-        username,
-        password
-      });
-    } catch (err) {
-      // If the endpoint does not exist (404), we'll try the alternative documented API below
-      if (err.response && err.response.status === 404) {
-        response = null;
-      } else {
-        throw err;
-      }
-    }
-
-    // If we got a response from /auth/login handle its expected shape
-    if (response && response.data) {
-      // older variant: { success: true, token, user }
-      if (response.data.success === true) {
-        authToken = response.data.token || response.data.accessToken;
-        currentUser = response.data.user || null;
-        return { success: true, user: currentUser, token: authToken };
-      }
-
-      // newer variant may return tokens directly
-      if (response.data.token || response.data.accessToken) {
-        authToken = response.data.token || response.data.accessToken;
-        currentUser = response.data.user || null;
-        return { success: true, user: currentUser, token: authToken };
-      }
-
-      // otherwise fall through to try documented endpoint
-    }
-
-    // Fallback: documented API sample exposes POST /login (under route prefix api/ at server)
-    // The sample expects DTO keys like Usuario and Senha. Map accordingly.
-    response = await axios.post(`${appConfig.apiBaseUrl}/login`, {
-      Usuario: username,
-      Senha: password
+    response = await axios.post(`${appConfig.apiBaseUrl}/loginMenu`, {
+      Username: username,
+      Password: password
     });
 
     // Sample /login returns { accessToken, refreshToken, ... }
     if (response && response.data) {
+
       const token = response.data.accessToken || response.data.access_token || response.data.token;
       if (token) {
         authToken = token;
         // The sample doesn't always include a full user object; store minimal info
         currentUser = { username };
-        return { success: true, user: currentUser, token: authToken };
+        return { success: true, user: currentUser, userName: (response.data.user.name || ''),  token: authToken, companyName: (response.data.user.companyName || '') };
       }
 
       // If login failed with a message
@@ -475,4 +462,8 @@ ipcMain.handle('navigate-to-main', (event) => {
 ipcMain.handle('navigate-to-login', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   win.loadFile('login.html');
+});
+
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
 });
