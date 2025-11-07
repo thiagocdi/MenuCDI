@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSystems: () => ipcRenderer.invoke('api-get-systems'),
   getSystemVersion: (systemId) => ipcRenderer.invoke('api-get-system-version', systemId),
   downloadSystem: (systemId) => ipcRenderer.invoke('api-download-system', systemId),
+  extractZip: (zipPath, destDir) => ipcRenderer.invoke('extract-zip', zipPath, destDir),
+  deleteFile: (filePath) => ipcRenderer.invoke('delete-file', filePath),
   
   // Process management
   checkProcess: (processName) => ipcRenderer.invoke('check-process', processName),

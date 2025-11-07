@@ -251,16 +251,46 @@ async function checkForUpdates(item, tmpDir) {
 
         if (localVersion && sistema.versao) {
             // Simple version comparison (you might want to implement proper semver comparison)
-            const localVersionString = localVersion.version || "0.0.0.0";
-            const serverVersionString = sistema.versao || "0.0.0.0";
+            //const localVersionString = localVersion.version || "0.0.0.0";
+            //const serverVersionString = sistema.versao || "0.0.0.0";
+            const localVersionString = normalizeVersionString(localVersion.version || "0.0.0");
+            const serverVersionString = normalizeVersionString(sistema.versao || "0.0.0");
 
-            if (localVersionString !== serverVersionString) {
+            // Use numeric comparison instead of simple string inequality
+            const cmp = compareVersions(serverVersionString, localVersionString);
+
+            console.log(`Version compare: server=${serverVersionString} local=${localVersionString} cmp=${cmp}`);
+
+            if (cmp > 0) {
                 console.log(
                     `Update available for ${item.title}: ${localVersionString} -> ${serverVersionString}`
                 );
 
-                // Download update in background
-                downloadUpdate(item, tmpDir);
+                // Download update in background and return downloaded path
+                const downloadResp = await downloadUpdate(item, tmpDir);
+                if (downloadResp && downloadResp.path) {
+                    // Try to extract the downloaded zip to tmpDir
+                    try {
+                        const extractResp = await window.electronAPI.extractZip(downloadResp.path, tmpDir);
+                        if (extractResp && extractResp.success) {
+                            // After extraction, check for the expected tmp exe and move it to exePath
+                            const tmpExePath = `${tmpDir}${item.action}`;
+                            const tmpFileExists = await window.electronAPI.getFileVersion(tmpExePath);
+                            if (tmpFileExists) {
+                                //delete the .zip file
+                                await window.electronAPI.deleteFile(downloadResp.path);
+                            } else {
+                                console.warn(`Extracted but tmp exe not found at ${tmpExePath}`);
+                            }
+                        } else {
+                            console.warn("Extract failed:", extractResp && extractResp.message);
+                        }
+                    } catch (err) {
+                        console.error("Extraction/apply update error:", err);
+                    }
+                }
+            } else {
+                console.log(`No update required for ${item.title} (server ${serverVersionString} <= local ${localVersionString})`);
             }
         }
     } catch (error) {
@@ -282,9 +312,12 @@ async function downloadUpdate(item, tmpDir) {
         if (response) {
             console.log(`Update downloaded for ${item.title}`);
             // The actual file download and extraction would happen in the main process
+            return response;
         }
+        return null;
     } catch (error) {
         console.error("Download update error:", error);
+        return null;
     }
 }
 
@@ -341,4 +374,42 @@ function abrirWhatsApp() {
     var phoneNumber = "553584653219";
     var whatsappUrl = "https://wa.me/" + phoneNumber;
     window.open(whatsappUrl, "_blank");
+}
+
+// Utility: parse a version string into numeric segments
+function parseVersion(v) {
+    if (!v && v !== 0) return [];
+    const s = String(v).trim();
+    // remove any non-digit/dot characters (e.g. "1.0.0-beta" -> "1.0.0")
+    const cleaned = s.replace(/[^0-9.]/g, "");
+    if (!cleaned) return [];
+    return cleaned
+        .split(".")
+        .map((p) => {
+            // remove leading zeros safely and parse int
+            const num = parseInt(p.replace(/^0+(?=\d)/, "") || "0", 10);
+            return Number.isNaN(num) ? 0 : num;
+        });
+}
+
+// Utility: normalize version to a canonical string "x.y.z"
+function normalizeVersionString(v) {
+    const parts = parseVersion(v);
+    if (parts.length === 0) return "0.0.0";
+    return parts.join(".");
+}
+
+// Utility: compare two version strings (numeric comparison)
+// returns 1 if a>b, -1 if a<b, 0 if equal
+function compareVersions(a, b) {
+    const A = parseVersion(a);
+    const B = parseVersion(b);
+    const len = Math.max(A.length, B.length);
+    for (let i = 0; i < len; i++) {
+        const ai = A[i] || 0;
+        const bi = B[i] || 0;
+        if (ai > bi) return 1;
+        if (ai < bi) return -1;
+    }
+    return 0;
 }

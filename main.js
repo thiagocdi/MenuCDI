@@ -10,6 +10,7 @@ const axios = require("axios"); // cliente HTTP para chamadas de API
 const StreamZip = require("node-stream-zip"); // leitura/extração de ZIPs (usado em updates)
 const { spawn, exec } = require("child_process"); // spawn/exec para gerenciar processos
 const os = require("os"); // informações do sistema
+const winVersionInfo = require("win-version-info"); // obter versão do executável no Windows
 
 // Configuration
 let appConfig = {
@@ -383,49 +384,11 @@ ipcMain.handle("api-get-system-version", async (event, systemId) => {
  *   serializar objetos de stream sobre IPC (causa erros de circular refs).
  * - Caso o backend retorne Content-Disposition com filename, usamos esse nome.
  */
+
 ipcMain.handle("api-download-system", async (event, systemId) => {
     try {
         if (!authToken) throw new Error("Not authenticated");
-        // Try legacy path first, fall back to documented POST /downloadSistema?IdSistema=...
-        try {
-            const legacyResp = await axios.get(
-                `${appConfig.apiBaseUrl}/sistemas/${systemId}/download`,
-                {
-                    headers: { Authorization: `Bearer ${authToken}` },
-                    responseType: "stream",
-                }
-            );
-            // Save stream to temporary file and return a safe object
-            const tmpDir = path.join(
-                appConfig.caminhoExecLocal || os.tmpdir(),
-                "tmp"
-            );
-            if (!fs.existsSync(tmpDir))
-                fs.mkdirSync(tmpDir, { recursive: true });
-            const filename =
-                legacyResp.headers && legacyResp.headers["content-disposition"]
-                    ? (
-                          legacyResp.headers["content-disposition"].split(
-                              "filename="
-                          )[1] || `${systemId}.zip`
-                      ).replace(/"/g, "")
-                    : `${systemId}.zip`;
-            const tmpPath = path.join(tmpDir, filename);
 
-            const writer = fs.createWriteStream(tmpPath);
-            await new Promise((resolve, reject) => {
-                legacyResp.data.pipe(writer);
-                writer.on("finish", resolve);
-                writer.on("error", reject);
-            });
-
-            return { success: true, path: tmpPath };
-        } catch (err) {
-            if (!(err.response && err.response.status === 404)) {
-                throw err;
-            }
-            // else fallback below
-        }
         // API sample uses POST /downloadSistema with IdSistema as query
         const response = await axios.post(
             `${appConfig.apiBaseUrl}/downloadSistema`,
@@ -437,22 +400,55 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
             }
         );
 
-        // Save stream to temp file and return path
-        const tmpDir = path.join(
-            appConfig.caminhoExecLocal || os.tmpdir(),
-            "tmp"
-        );
+        // Helper: parse Content-Disposition safely (supports filename* RFC5987)
+        function getFilenameFromContentDisposition(header) {
+            if (!header || typeof header !== "string") return null;
+            // Prefer filename* (RFC5987)
+            const fnStarMatch = header.match(/filename\*\s*=\s*([^;]+)/i);
+            if (fnStarMatch) {
+                let val = fnStarMatch[1].trim();
+                val = val.replace(/^['"]+|['"]+$/g, ""); // remove surrounding quotes
+                // pattern: charset'lang'encoded_filename
+                const rfcMatch = val.match(/^[^']*'[^']*'(.+)$/);
+                if (rfcMatch && rfcMatch[1]) {
+                    try {
+                        return decodeURIComponent(rfcMatch[1]);
+                    } catch (e) {
+                        return rfcMatch[1];
+                    }
+                }
+                try {
+                    return decodeURIComponent(val);
+                } catch (e) {
+                    return val;
+                }
+            }
+
+            // Fallback to filename=
+            const fnMatch = header.match(/filename\s*=\s*("?)([^";]+)\1/i);
+            if (fnMatch && fnMatch[2]) {
+                return fnMatch[2];
+            }
+
+            return null;
+        }
+
+        // Determine filename safely
+        const disposition = response.headers && response.headers["content-disposition"];
+        let filename = getFilenameFromContentDisposition(disposition) || `${systemId}.zip`;
+
+        // Sanitize filename: remove path components and illegal chars
+        filename = path.basename(filename);
+        // Replace quotes and control chars
+        filename = filename.replace(/["']/g, "").replace(/[\0<>:"/\\|?*\x00-\x1F]/g, "_");
+
+        // Ensure tmp dir exists
+        const tmpDir = path.join(appConfig.caminhoExecLocal || os.tmpdir(), "tmp");
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-        const filename =
-            response.headers && response.headers["content-disposition"]
-                ? (
-                      response.headers["content-disposition"].split(
-                          "filename="
-                      )[1] || `${systemId}.zip`
-                  ).replace(/"/g, "")
-                : `${systemId}.zip`;
+
         const tmpPath = path.join(tmpDir, filename);
 
+        // Write stream to disk
         const writer = fs.createWriteStream(tmpPath);
         await new Promise((resolve, reject) => {
             response.data.pipe(writer);
@@ -462,7 +458,6 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
 
         return { success: true, path: tmpPath };
     } catch (error) {
-        // Avoid serializing the full error/response (may contain circular refs). Log safe fields.
         const status = error.response && error.response.status;
         const statusText = error.response && error.response.statusText;
         console.error("Download system error:", error.message, {
@@ -476,6 +471,59 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
                     : "[object]"
                 : error.message;
         throw new Error(`Download system failed: ${body}`);
+    }
+});
+
+/**
+ * Handler: extract-zip
+ * Extrai um arquivo .zip para um diretório destino usando node-stream-zip (async).
+ * - zipPath: caminho completo do arquivo .zip já baixado
+ * - destDir: diretório de destino onde o conteúdo será extraído
+ * Retorna: { success: true, dest } ou { success: false, message }
+ */
+ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
+    try {
+        if (!zipPath || !fs.existsSync(zipPath)) {
+            throw new Error("Arquivo zip não encontrado: " + zipPath);
+        }
+
+        // Resolve caminhos absolutos e evita extração fora da pasta permitida
+        const resolvedZip = path.resolve(zipPath);
+        const resolvedDest = path.resolve(destDir || path.join(appConfig.caminhoExecLocal || os.tmpdir(), "tmp"));
+
+        // Garantir que a pasta destino exista
+        if (!fs.existsSync(resolvedDest)) fs.mkdirSync(resolvedDest, { recursive: true });
+
+        // Usar API async do node-stream-zip
+        const zip = new StreamZip.async({ file: resolvedZip });
+
+        // Extrai todo o conteúdo para a pasta destino
+        await zip.extract(null, resolvedDest);
+        await zip.close();
+
+        return { success: true, dest: resolvedDest };
+    } catch (error) {
+        console.error("Extract zip error:", error.message);
+        return { success: false, message: error.message };
+    }
+});
+
+/** 
+ * Handler: delete-file
+ * Deleta um arquivo especificado por filePath.
+ * Retorna { success: true } ou { success: false, message }
+ */
+ipcMain.handle("delete-file", async (event, filePath) => {
+    try {
+        if (filePath && fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            return { success: true };
+        } else {
+            return { success: false, message: "File not found" };
+        }
+    } catch (error) {
+        console.error("Delete file error:", error.message);
+        return { success: false, message: error.message };
     }
 });
 
@@ -658,17 +706,33 @@ ipcMain.handle("launch-exe", async (event, exePath, args = []) => {
  * Nota: para um produto real, implementar leitura de versão do arquivo
  * (ex.: recurso de versão em exe no Windows) em vez deste placeholder.
  */
+// ipcMain.handle("get-file-version", (event, filePath) => {
+//     try {
+//         if (!fs.existsSync(filePath)) {
+//             return null;
+//         }
+
+//         // For Windows, we'll need to implement version reading
+//         // For now, return file modification time as version indicator
+//         const stats = fs.statSync(filePath);
+//         return {
+//             version: "1.0.0.0", // Placeholder - implement proper version reading
+//             modified: stats.mtime,
+//         };
+//     } catch (error) {
+//         console.error("Get file version error:", error.message);
+//         return null;
+//     }
+// });
 ipcMain.handle("get-file-version", (event, filePath) => {
     try {
-        if (!fs.existsSync(filePath)) {
-            return null;
-        }
+        if (!fs.existsSync(filePath)) return null;
 
-        // For Windows, we'll need to implement version reading
-        // For now, return file modification time as version indicator
         const stats = fs.statSync(filePath);
+        const info = winVersionInfo(filePath);
+
         return {
-            version: "1.0.0.0", // Placeholder - implement proper version reading
+            version: info.FileVersion || info.ProductVersion,
             modified: stats.mtime,
         };
     } catch (error) {
