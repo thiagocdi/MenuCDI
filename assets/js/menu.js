@@ -232,14 +232,22 @@ async function handleMenuClick(item) {
 }
 
 async function checkForUpdates(item, tmpDir) {
+    console.log(`checkForUpdates(${item}, ${tmpDir})`)
     try {
         // This runs in background, don't show loading
         const sistema = await window.electronAPI.getSystemVersion(
             item.idSistema
         );
+
+        console.log("sistema", sistema);
+
         const exePath = `${appConfig.caminhoExecLocal}${item.action}`;
 
+        console.log("exePath", exePath);
+
         const localVersion = await window.electronAPI.getFileVersion(exePath);
+        
+        console.log("localVersion", localVersion);
 
         if (localVersion && sistema.versao) {
             // Simple version comparison (you might want to implement proper semver comparison)
