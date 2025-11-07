@@ -8,14 +8,14 @@ const path = require("path"); // manipulação de caminhos cross-platform
 const fs = require("fs"); // acesso ao sistema de arquivos
 const axios = require("axios"); // cliente HTTP para chamadas de API
 const StreamZip = require("node-stream-zip"); // leitura/extração de ZIPs (usado em updates)
-const { spawn, exec } = require("child_process"); // spawn/exec para gerenciar processos
+const { spawn, exec, execSync } = require("child_process"); // spawn/exec/execSync para gerenciar processos e ler registry
 const os = require("os"); // informações do sistema
 const winVersionInfo = require("win-version-info"); // obter versão do executável no Windows
 
 // Configuration
 let appConfig = {
-    apiBaseUrl: process.env.CDI_URL_API_MENU || "",
-    caminhoExecLocal: process.env.CDI_CAMINHO_EXEC_LOCAL || "",
+    apiBaseUrl: getApiBaseFromEnvOrRegistry() || "",
+    caminhoExecLocal: determineCaminhoExecLocal() || "",
 };
 
 /**
@@ -98,6 +98,11 @@ function createWindow() {
         width: 420,
         height: 700,
         icon: iconImage || undefined,
+
+        useContentSize: true,
+        // Esconde a menu bar automaticamente (não remove totalmente)
+        autoHideMenuBar: true,
+
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
             // por segurança, mantemos nodeIntegration desligado e contextIsolation ligado
@@ -105,6 +110,13 @@ function createWindow() {
             contextIsolation: true,
         },
     });
+
+    // Remove o menu completamente quando empacotado (distribuição)
+    if (app.isPackaged) {
+        //Menu.setApplicationMenu(null);
+        // garante que a menu bar não apareça por Alt
+        //win.setMenuBarVisibility(false);
+    }
 
     // Carrega a tela de login como página inicial
     win.loadFile("login.html");
@@ -476,12 +488,14 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
 
 /**
  * Handler: extract-zip
- * Extrai um arquivo .zip para um diretório destino usando node-stream-zip (async).
+ * Extrai um arquivo .zip para um diretório destino preservando as datas de
+ * modificação presentes dentro do zip (mantém mtime original).
  * - zipPath: caminho completo do arquivo .zip já baixado
  * - destDir: diretório de destino onde o conteúdo será extraído
  * Retorna: { success: true, dest } ou { success: false, message }
  */
 ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
+    let zip;
     try {
         if (!zipPath || !fs.existsSync(zipPath)) {
             throw new Error("Arquivo zip não encontrado: " + zipPath);
@@ -494,17 +508,81 @@ ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
         // Garantir que a pasta destino exista
         if (!fs.existsSync(resolvedDest)) fs.mkdirSync(resolvedDest, { recursive: true });
 
-        // Usar API async do node-stream-zip
-        const zip = new StreamZip.async({ file: resolvedZip });
+        // Abrir zip (API async)
+        zip = new StreamZip.async({ file: resolvedZip });
 
-        // Extrai todo o conteúdo para a pasta destino
-        await zip.extract(null, resolvedDest);
+        // Obter entradas do zip
+        const entries = await zip.entries();
+
+        // Itera cada entrada e faz extração manual (para preservar mtime)
+        for (const entryName of Object.keys(entries)) {
+            const entry = entries[entryName];
+            const entryPath = entry.name; // caminho interno no zip (p.ex. "bin/Vendas.exe")
+            const destPath = path.join(resolvedDest, entryPath);
+
+            if (entry.isDirectory) {
+                // garante diretório
+                if (!fs.existsSync(destPath)) fs.mkdirSync(destPath, { recursive: true });
+                continue;
+            }
+
+            // garante diretório pai
+            const parentDir = path.dirname(destPath);
+            if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true });
+
+            // extrai o stream e grava em disco
+            const readStream = await zip.stream(entryName);
+            await new Promise((resolve, reject) => {
+                const writeStream = fs.createWriteStream(destPath, { flags: "w" });
+                readStream.pipe(writeStream);
+                readStream.on("error", (err) => reject(err));
+                writeStream.on("error", (err) => reject(err));
+                writeStream.on("close", () => resolve());
+            });
+
+            // preserva a data de modificação do entry se disponível
+            try {
+                // entry.time pode vir como Date ou número (segundos ou ms)
+                let mtimeMs = null;
+                if (entry.time instanceof Date) {
+                    mtimeMs = entry.time.getTime();
+                } else if (typeof entry.time === "number") {
+                    mtimeMs = entry.time;
+                } else {
+                    mtimeMs = Date.now();
+                }
+
+                // detectar magnitude: se for timestamp em segundos (~1e9) converte para ms
+                if (typeof mtimeMs === "number" && mtimeMs < 1e12) mtimeMs = mtimeMs * 1000;
+
+                // Ajuste de timezone: muitos zips armazenam timestamp sem timezone.
+                // Para manter a data/hora exibida igual à original local (ex: Brasil UTC-3),
+                // compensamos usando o offset local atual (minutos -> ms).
+                // Ex.: se entry.time foi interpretado como UTC, adicionar o offset local
+                // corrige a visualização local (15:02 em vez de 12:02).
+                const tzOffsetMs = new Date().getTimezoneOffset() * 60 * 1000; // minutos -> ms
+                mtimeMs = mtimeMs + tzOffsetMs;
+
+                const mtimeDate = new Date(mtimeMs);
+                // Ajusta atime para manter coerência (usa mesma data)
+                fs.utimesSync(destPath, mtimeDate, mtimeDate);
+            } catch (e) {
+                // se não for possível ajustar a data, apenas loga e continua
+                console.warn("Falha ao preservar mtime para", destPath, e && e.message);
+            }
+        }
+
         await zip.close();
 
         return { success: true, dest: resolvedDest };
     } catch (error) {
-        console.error("Extract zip error:", error.message);
-        return { success: false, message: error.message };
+        console.error("Extract zip error:", error && error.message);
+        try {
+            if (zip && zip.close) await zip.close();
+        } catch (e) {
+            // ignore
+        }
+        return { success: false, message: error.message || String(error) };
     }
 });
 
@@ -800,3 +878,100 @@ ipcMain.handle("navigate-to-login", (event) => {
 ipcMain.handle("get-app-version", () => {
     return app.getVersion();
 });
+
+
+/**
+ * Determina o caminho local base (caminhoExecLocal) onde os EXEs/artefatos
+ * devem ser procurados/gravados.
+ *
+ * Prioridade:
+ * 1) variável de ambiente CDI_CAMINHO_EXEC_LOCAL (se definida)
+ * 2) se app.isPackaged => pega o diretório pai do diretório do executável
+ *    (ex.: exe em D:\Exec\win-unpacked\MenuCDI.exe -> retorna D:\Exec\)
+ * 3) desenvolvimento => diretório pai de __dirname (projeto)
+ *
+ * Garante que o caminho retornado termine com separador (backslash no Windows).
+ */
+function ensureTrailingSep(p) {
+    if (!p) return p || "";
+    const norm = path.normalize(p);
+    return norm.endsWith(path.sep) ? norm : norm + path.sep;
+}
+
+function determineCaminhoExecLocal() {
+    // 1) Prefer env var se explicitamente definida
+    if (process.env.CDI_CAMINHO_EXEC_LOCAL && process.env.CDI_CAMINHO_EXEC_LOCAL.trim()) {
+        console.log("Usando CDI_CAMINHO_EXEC_LOCAL:", process.env.CDI_CAMINHO_EXEC_LOCAL);
+        return ensureTrailingSep(process.env.CDI_CAMINHO_EXEC_LOCAL.trim());
+    }
+
+    try {
+        // 2) Quando empacotado, usamos process.execPath
+        // ex: process.execPath = "D:\Exec\win-unpacked\MenuCDI.exe"
+        if (app && app.isPackaged) {
+            const execDir = path.dirname(process.execPath); // D:\Exec\win-unpacked
+            const parent = path.dirname(execDir); // D:\Exec
+
+            console.log("Usando caminho do executável:", parent);
+            return ensureTrailingSep(parent);
+        }
+
+        // 3) Modo desenvolvimento: use o diretório pai de __dirname
+        const devDir = path.resolve(__dirname); // ...\MenuCDI
+        const devParent = path.dirname(devDir);
+
+        console.log("Usando caminho de desenvolvimento:", devParent);
+        return ensureTrailingSep(devParent);
+    } catch (e) {
+        // Em caso de qualquer erro, retorna string vazia (o resto do app lida com isso)
+        console.warn("determineCaminhoExecLocal error:", e && e.message);
+        return "";
+    }
+}
+
+/**
+ * getApiBaseFromEnvOrRegistry()
+ * - Primeiro tenta ler process.env.CDI_URL_API_MENU
+ * - Se não definido e estamos no Windows, tenta ler HKCU\Software\CDI\ApiBaseUrl via `reg query`
+ * - Retorna string (ou "") sempre que não encontrar valor
+ */
+function getApiBaseFromEnvOrRegistry() {
+    // 1) prefer env var
+    const envVal = process.env.CDI_URL_API_MENU;
+    if (envVal && String(envVal).trim()) {
+        console.log("Usando CDI_URL_API_MENU:", envVal);
+        return String(envVal).trim();
+    }
+
+    // 2) tenta ler do registry no Windows
+    if (process.platform === "win32") {
+        try {
+            // Ex: reg query "HKCU\Software\CDI" /v ApiBaseUrl
+            const out = execSync('reg query "HKCU\\Software\\CDI" /v ApiBaseUrl', {
+                stdio: ["ignore", "pipe", "ignore"],
+                encoding: "utf8",
+                timeout: 3000,
+            });
+            if (out) {
+                // Saída típica:
+                // HKEY_CURRENT_USER\Software\CDI
+                //     ApiBaseUrl    REG_SZ    http://localhost:8000
+                const m = out.match(/ApiBaseUrl\s+REG_[A-Z_]+\s+(.*)/i);
+                if (m && m[1]) {
+                    const val = m[1].trim();
+                    if (val) {
+                        console.log("Usando ApiBaseUrl do registry:", val);
+                        return val;
+                    }
+                }
+            }
+        } catch (e) {
+            // falha ao ler o registry — log para debug mas não interrompe
+            console.warn("Cannot read ApiBaseUrl from registry:", e && e.message);
+        }
+    }
+
+    // 3) fallback vazio
+    console.log("Usando fallback vazio para ApiBaseUrl");
+    return "";
+}
