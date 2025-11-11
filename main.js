@@ -397,7 +397,7 @@ ipcMain.handle("api-get-system-version", async (event, systemId) => {
  * - Caso o backend retorne Content-Disposition com filename, usamos esse nome.
  */
 
-ipcMain.handle("api-download-system", async (event, systemId) => {
+ipcMain.handle("api-download-system-OLD", async (event, systemId) => {
     try {
         if (!authToken) throw new Error("Not authenticated");
 
@@ -483,6 +483,139 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
                     : "[object]"
                 : error.message;
         throw new Error(`Download system failed: ${body}`);
+    }
+});
+
+ipcMain.handle("api-download-system", async (event, systemId) => {
+    try {
+        if (!authToken) throw new Error("Not authenticated");
+
+        const response = await axios.post(
+            `${appConfig.apiBaseUrl}/downloadSistema`,
+            null,
+            {
+                headers: { Authorization: `Bearer ${authToken}` },
+                params: { IdSistema: systemId },
+                responseType: "stream",
+            }
+        );
+
+        console.log('download response headers', response.status, response.headers)
+
+        // Helper: parse Content-Disposition safely (supports filename* RFC5987)
+        function getFilenameFromContentDisposition(header) {
+            if (!header || typeof header !== "string") return null;
+            const fnStarMatch = header.match(/filename\*\s*=\s*([^;]+)/i);
+            if (fnStarMatch) {
+                let val = fnStarMatch[1].trim().replace(/^['"]+|['"]+$/g, "");
+                const rfcMatch = val.match(/^[^']*'[^']*'(.+)$/);
+                if (rfcMatch && rfcMatch[1]) {
+                    try { return decodeURIComponent(rfcMatch[1]); } catch (e) { return rfcMatch[1]; }
+                }
+                try { return decodeURIComponent(val); } catch (e) { return val; }
+            }
+            const fnMatch = header.match(/filename\s*=\s*("?)([^";]+)\1/i);
+            if (fnMatch && fnMatch[2]) return fnMatch[2];
+            return null;
+        }
+
+        const disposition = response.headers && response.headers["content-disposition"];
+        let filename = getFilenameFromContentDisposition(disposition) || `${systemId}.zip`;
+        filename = path.basename(filename).replace(/["']/g, "").replace(/[\0<>:"/\\|?*\x00-\x1F]/g, "_");
+
+        const tmpDir = path.join(appConfig.caminhoExecLocal || os.tmpdir(), "tmp");
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+        const tmpPath = path.join(tmpDir, filename);
+
+        // Write stream to disk
+        const writer = fs.createWriteStream(tmpPath);
+        await new Promise((resolve, reject) => {
+            response.data.pipe(writer);
+            writer.on("finish", resolve);
+            writer.on("error", reject);
+            response.data.on && response.data.on("error", reject);
+        });
+
+        return { success: true, path: tmpPath };
+    } catch (error) {
+        // Read and stringify possible stream/object response bodies (best-effort)
+        async function readStreamToString(stream, maxBytes = 200 * 1024, timeoutMs = 3000) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const chunks = [];
+                    let length = 0;
+                    let done = false;
+                    const onData = (chunk) => {
+                        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+                        chunks.push(buf);
+                        length += buf.length;
+                        if (length >= maxBytes) {
+                            cleanup();
+                            done = true;
+                            resolve(Buffer.concat(chunks).toString("utf8"));
+                        }
+                    };
+                    const onEnd = () => {
+                        if (done) return;
+                        cleanup();
+                        resolve(Buffer.concat(chunks).toString("utf8"));
+                    };
+                    const onError = (err) => {
+                        cleanup();
+                        reject(err);
+                    };
+                    const onTimeout = () => {
+                        if (done) return;
+                        cleanup();
+                        resolve(Buffer.concat(chunks).toString("utf8"));
+                    };
+                    const cleanup = () => {
+                        try {
+                            stream.removeListener && stream.removeListener("data", onData);
+                            stream.removeListener && stream.removeListener("end", onEnd);
+                            stream.removeListener && stream.removeListener("error", onError);
+                        } catch (e) {}
+                        clearTimeout(tmr);
+                    };
+                    stream.on && stream.on("data", onData);
+                    stream.on && stream.on("end", onEnd);
+                    stream.on && stream.on("error", onError);
+                    const tmr = setTimeout(onTimeout, timeoutMs);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        }
+
+        let bodyStr = error.message || String(error);
+        try {
+            if (error.response) {
+                const { status, statusText, data } = error.response;
+                if (data) {
+                    if (typeof data === "string") bodyStr = data;
+                    else if (Buffer.isBuffer(data)) bodyStr = data.toString("utf8");
+                    else if (data && typeof data.pipe === "function") {
+                        try {
+                            bodyStr = await readStreamToString(data);
+                        } catch (e) {
+                            bodyStr = "[stream data]";
+                        }
+                    } else {
+                        try { bodyStr = JSON.stringify(data); } catch (_) { bodyStr = String(data); }
+                    }
+                } else {
+                    bodyStr = `${status || ""} ${statusText || ""}`.trim() || bodyStr;
+                }
+            }
+        } catch (e) {
+            // ignore serialization errors
+        }
+
+        const status = error.response && error.response.status;
+        const statusText = error.response && error.response.statusText;
+        console.error("Download system error:", { status, statusText, body: bodyStr });
+        throw new Error(`Download system failed: ${bodyStr}`);
     }
 });
 
