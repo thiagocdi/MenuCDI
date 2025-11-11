@@ -18,6 +18,20 @@ let appConfig = {
     caminhoExecLocal: determineCaminhoExecLocal() || "",
 };
 
+// Auto-update (update.electronjs.org via update-electron-app)
+try {
+    if (app.isPackaged) {
+        require("update-electron-app")({
+            updateInterval: "1 hour"
+        });
+        console.log("Auto-update enabled (update.electronjs.org).");
+    } else {
+        console.log("Auto-update disabled in development.");
+    }
+} catch (e) {
+    console.warn("Auto-update init failed:", e && e.message);
+}
+
 /**
  * normalizeApiBase(url)
  *
