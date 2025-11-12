@@ -22,51 +22,8 @@ const confirmModal = new bootstrap.Modal(
 const modalMessage = document.getElementById("modal-message");
 const modalConfirmBtn = document.getElementById("modal-confirm-btn");
 
-// Utility functions
-function showLoading(state, message = "Carregando...") {
-    isLoading = state;
-    loadingOverlay.style.display = state ? "flex" : "none";
-    loadingMessage.textContent = message;
-}
 
-function showError(message) {
-    document.getElementById("toast-message").textContent = message;
-    const toast = new bootstrap.Toast(errorToast, { delay: 8000 });
-    toast.show();
-}
 
-function showSuccess(message) {
-    successMessage.textContent = message;
-    const toast = new bootstrap.Toast(successToast, { delay: 4000 });
-    toast.show();
-}
-
-function showConfirmModal(message) {
-    return new Promise((resolve) => {
-        modalMessage.textContent = message;
-
-        const handleConfirm = () => {
-            modalConfirmBtn.removeEventListener("click", handleConfirm);
-            confirmModal.hide();
-            resolve(true);
-        };
-
-        const handleCancel = () => {
-            document
-                .querySelector("#confirmModal .btn-secondary")
-                .removeEventListener("click", handleCancel);
-            confirmModal.hide();
-            resolve(false);
-        };
-
-        modalConfirmBtn.addEventListener("click", handleConfirm);
-        document
-            .querySelector("#confirmModal .btn-secondary")
-            .addEventListener("click", handleCancel);
-
-        confirmModal.show();
-    });
-}
 
 // Make it globally available for consistency with MAUI version
 window.showConfirmModal = showConfirmModal;
@@ -100,9 +57,17 @@ async function initializePage() {
         if (filial) {
             filial.textContent = localStorage.getItem("filial") || "";
         }
+
+
     } catch (error) {
         console.error("Initialization error:", error);
-        showError("Erro ao inicializar aplicação: " + error.message);
+        showToast({
+            color: "danger",
+            title: "Erro",
+            message: "Erro ao inicializar aplicação: " + error.message,
+            duration: 3000,
+            autohide: true,
+        });
     } finally {
         showLoading(false);
     }
@@ -123,7 +88,13 @@ async function loadMenuSystems() {
         renderMenuItems();
     } catch (error) {
         console.error("Load systems error:", error);
-        showError("Erro ao carregar sistemas: " + error.message);
+        showToast({
+            color: "danger",
+            title: "Erro",
+            message: "Erro ao carregar sistemas: " + error.message,
+            duration: 3000,
+            autohide: true,
+        });
     }
 }
 
@@ -219,13 +190,31 @@ async function handleMenuClick(item) {
         ]);
 
         if (result.success) {
-            showSuccess(`${item.title} foi executado com sucesso!`);
+            showToast({
+                color: "success",
+                title: "Sucesso",
+                message: `${item.title} foi executado com sucesso!`,
+                duration: 3000,
+                autohide: true,
+            });
         } else {
-            showError(result.message || "Erro ao executar aplicativo");
+            showToast({
+                color: "danger",
+                title: "Erro",
+                message: result.message || "Erro ao executar aplicativo",
+                duration: 3000,
+                autohide: true,
+            });
         }
     } catch (error) {
         console.error("Menu click error:", error);
-        showError(`Erro ao executar ${item.title}: ${error.message}`);
+        showToast({
+            color: "danger",
+            title: "Erro",
+            message: `Erro ao executar ${item.title}: ${error.message}`,
+            duration: 3000,
+            autohide: true,
+        });
     } finally {
         showLoading(false);
     }
@@ -334,7 +323,13 @@ logoutBtn.addEventListener("click", async () => {
             await window.electronAPI.navigateToLogin();
         } catch (error) {
             console.error("Logout error:", error);
-            showError("Erro ao fazer logout: " + error.message);
+            showToast({
+                color: "danger",
+                title: "Erro",
+                message: "Erro ao fazer logout: " + error.message,
+                duration: 3000,
+                autohide: true,
+            });
         }
     }
 });

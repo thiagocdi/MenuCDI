@@ -59,7 +59,8 @@
 	<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
 
 	<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
-		<nav class="flex-column" style="background-color: #2b3035; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;">
+		<nav class="flex-column"
+			style="background-color: #2b3035; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px;">
 			<div class="nav-item px-3">
 				<div class="d-grid gap-2 col-6 mx-auto">
 					<button type="button" class="btn btn-success" onclick="abrirWhatsApp()">
@@ -150,10 +151,52 @@
 	</div>
 
 	<!-- Bootstrap JS + Popper -->
+	
+	<div class="modal fade" id="updateModal" tabindex="-1" aria-labelledby="updateModalLabel" aria-hidden="true"
+	data-bs-backdrop="static" data-bs-keyboard="false">
+	<div class="modal-dialog modal-dialog-centered">
+		<div class="modal-content">
+			<div class="modal-header bg-primary text-white">
+					<h5 class="modal-title" id="updateModalLabel">
+						<i class="bi bi-arrow-repeat"></i> Atualização Disponível
+					</h5>
+				</div>
+				<div class="modal-body">
+					<p class="mb-2">Uma nova versão do MenuCDI está disponível!</p>
+					<div class="mb-3">
+						<strong>Versão atual:</strong> <span id="currentVersionSpan">-</span><br>
+						<strong>Nova versão:</strong> <span id="newVersionSpan">-</span>
+					</div>
+					<div id="updateNotesDiv" class="alert alert-info" style="display: none;">
+						<strong>Novidades:</strong>
+						<p id="updateNotesParagraph" class="mb-0 mt-2"></p>
+					</div>
+					<div id="downloadProgressDiv" style="display: none;">
+						<div class="progress mb-2">
+							<div id="downloadProgressBar"
+								class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+								style="width: 0%">0%</div>
+						</div>
+						<small class="text-muted" id="downloadProgressText">Iniciando download...</small>
+					</div>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" id="updateLaterBtn">Mais tarde</button>
+					<button type="button" class="btn btn-primary" id="downloadUpdateBtn">
+						<i class="bi bi-download"></i> Baixar e instalar
+					</button>
+					<button type="button" class="btn btn-success" id="installUpdateBtn" style="display: none;">
+						<i class="bi bi-arrow-clockwise"></i> Instalar agora
+					</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
 	<script src="assets/js/bootstrap.bundle.min.js"></script>
+	<script src="assets/js/app.js"></script>
 	<script src="assets/js/menu.js"></script>
-
-
+	<script src="assets/js/update.js"></script>
 </body>
 
 </html>

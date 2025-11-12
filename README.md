@@ -102,6 +102,33 @@ npm run build-legacy
 ### Distribution
 The built application will be available in the `dist/` directory as a portable executable.
 
+## Publishing (build + publish)
+
+To publish a new release to GitHub (so auto-updates via update.electronjs.org work), follow these steps:
+
+1. Bump the version in package.json (example — set the desired version):
+```powershell
+# edit package.json or use npm to bump
+npm version patch -m "chore(release): v%s"
+# or manually update "version" in package.json
+```
+
+2. Build the app:
+```powershell
+npm run build
+```
+
+3. Publish the artifacts to GitHub Releases:
+```powershell
+# ensure GH_TOKEN or GITHUB_TOKEN is set in the environment
+npm run publish
+```
+
+Notes:
+- The published GitHub Release must be public (not a draft) and include Squirrel artifacts (.nupkg, RELEASES, Setup.exe) for Windows auto-updates to work.
+- Users who run a portable/unpacked exe will not receive auto-updates; they must run the Setup.exe once to install the app (Squirrel install) so future updates are automatic.
+- If you use CI, make sure the environment has GH_TOKEN (or GITHUB_TOKEN) configured so electron-builder can upload releases.
+
 ## 🔧 API Integration
 
 ### Required API Endpoints

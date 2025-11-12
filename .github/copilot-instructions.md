@@ -143,3 +143,23 @@ Notes:
 - Your corporate VCS and any further integration steps are separate — we'll only use Git here to track assistant-suggested changes and to make rollback easy for you.
 
 If you later change your mind and want hook-based enforcement, tell us and we can add it back; for now we keep the repo clean and simple.
+
+## Publishing & Auto-update (quick steps)
+1. Install dev & runtime deps:
+   ```powershell
+   npm install --save-dev @electron-forge/cli @electron-forge/maker-squirrel @electron-forge/publisher-github
+   npm install --save update-electron-app
+   ```
+2. Ensure `forge.config.js` includes `@electron-forge/maker-squirrel` and the GitHub publisher (set `draft: false` if you want releases immediately published).
+3. Set `GITHUB_TOKEN` with a PAT (public_repo).
+4. Bump `package.json` version.
+5. Create distributables and publish:
+   ```powershell
+   npm run make
+   npm run publish
+   ```
+6. Confirm the GitHub Release is published (not draft). update.electronjs.org will then serve the update feed.
+
+Troubleshooting
+- Error "Could not find any make targets configured for the 'win32' platform." → add a Squirrel maker to `forge.config.js`.
+- If auto-update doesn't download, ensure the release contains Squirrel artifacts (.nupkg + RELEASES) and is public/published.

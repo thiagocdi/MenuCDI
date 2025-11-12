@@ -53,12 +53,6 @@ function showLoading(state) {
     }
 }
 
-function showError(message) {
-    toastMessage.textContent = message;
-    const toast = new bootstrap.Toast(errorToast, { delay: 8000 });
-    toast.show();
-}
-
 function handleUserInput(event) {
     // Convert to uppercase as user types (like MAUI version)
     event.target.value = event.target.value.toUpperCase();
@@ -81,12 +75,26 @@ loginForm.addEventListener("submit", async (e) => {
     const newPassword = newPasswordInput.value.trim();
 
     if (!username || !password) {
-        showError("Por favor, preencha usuário e senha");
+        showToast({
+            color: "primary",
+            title: "Atenção",
+            message: `Por favor, preencha usuário e senha`,
+            duration: 3000,
+            autohide: true,
+        });
+
         return;
     }
 
     if (newPasswordContainer.classList.contains("d-none") === false && !newPassword) {
-        showError("Por favor, preencha a nova senha");
+        showToast({
+            color: "primary",
+            title: "Atenção",
+            message: `Por favor, preencha a nova senha`,
+            duration: 3000,
+            autohide: true,
+        });
+
         return;
     }
 
@@ -97,9 +105,13 @@ loginForm.addEventListener("submit", async (e) => {
         const apiStatus = await window.electronAPI.checkApiStatus();
         if (!apiStatus) {
             const config = await window.electronAPI.getConfig();
-            showError(
-                `⚠️ O servidor está offline. Verifique sua conexão e tente novamente.\n${config.apiBaseUrl}`
-            );
+            showToast({
+                color: "danger",
+                title: "Atenção",
+                message: `⚠️ O servidor está offline. Verifique sua conexão e tente novamente.\n${config.apiBaseUrl}`,
+                duration: 3000,
+                autohide: true,
+            });
             return;
         }
 
@@ -124,11 +136,23 @@ loginForm.addEventListener("submit", async (e) => {
             // Navigate to main menu
             await window.electronAPI.navigateToMain();
         } else {
-            showError(loginResult.message || "Erro ao efetuar login");
+            showToast({
+                color: "danger",
+                title: "Erro",
+                message: loginResult.message || "Erro ao efetuar login",
+                duration: 3000,
+                autohide: true,
+            });
         }
     } catch (error) {
         console.error("Login error:", error);
-        showError("Erro inesperado ao efetuar login: " + error.message);
+        showToast({
+            color: "danger",
+            title: "Erro",
+            message: "Erro inesperado ao efetuar login: " + error.message,
+            duration: 3000,
+            autohide: true,
+        });
     } finally {
         showLoading(false);
     }
@@ -159,11 +183,21 @@ document.addEventListener("DOMContentLoaded", async () => {
             if (!apiStatus) {
                 const config = await window.electronAPI.getConfig();
                 if (config.apiBaseUrl) {
-                    showError(`⚠️ Servidor offline: ${config.apiBaseUrl}`);
+                    showToast({
+                        color: "danger",
+                        title: "Atenção",
+                        message: `⚠️ Servidor offline: ${config.apiBaseUrl}`,
+                        duration: 3000,
+                        autohide: true,
+                    });
                 } else {
-                    showError(
-                        "⚠️ URL da API não configurada. Verifique as variáveis de ambiente."
-                    );
+                    showToast({
+                        color: "danger",
+                        title: "Atenção",
+                        message: "⚠️ URL da API não configurada. Verifique as variáveis de ambiente.",
+                        duration: 3000,
+                        autohide: true,
+                    });
                 }
             }
         } catch (error) {
@@ -171,7 +205,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
     } catch (error) {
         console.error("Page initialization error:", error);
-        showError("Erro ao inicializar a página");
+        showToast({
+            color: "danger",
+            title: "Erro",
+            message: "Erro ao inicializar a página: " + error.message,
+            duration: 3000,
+            autohide: true,
+        });
     }
 });
 
@@ -190,4 +230,14 @@ passwordInput.addEventListener("keypress", (e) => {
 
 function trocarSenha() {
     newPasswordContainer.classList.remove("d-none");
+    newPasswordInput.value = "";
+    setTimeout(() => newPasswordInput.focus(), 50);
+}
+
+function cancelarTrocaSenha() {
+    // clear and hide the new password input
+    newPasswordInput.value = "";
+    newPasswordContainer.classList.add("d-none");
+    // return focus to password field
+    setTimeout(() => passwordInput.focus(), 50);
 }

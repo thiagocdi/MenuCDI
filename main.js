@@ -3,7 +3,8 @@
 // - ipcMain: handlers para comunicação renderer -> main (invokes)
 // - shell: abrir caminhos/URLs no SO (p.ex. abrir pasta/exe)
 // - nativeImage: carregar imagens/icones nativos (para taskbar)
-const { app, BrowserWindow, ipcMain, shell, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, nativeImage, dialog, } = require("electron");
+//const { autoUpdater } = require("electron-updater");
 const path = require("path"); // manipulação de caminhos cross-platform
 const fs = require("fs"); // acesso ao sistema de arquivos
 const axios = require("axios"); // cliente HTTP para chamadas de API
@@ -18,19 +19,127 @@ let appConfig = {
     caminhoExecLocal: determineCaminhoExecLocal() || "",
 };
 
-// Auto-update (update.electronjs.org via update-electron-app)
-try {
-    if (app.isPackaged) {
-        require("update-electron-app")({
-            updateInterval: "1 hour"
-        });
-        console.log("Auto-update enabled (update.electronjs.org).");
-    } else {
-        console.log("Auto-update disabled in development.");
+// Auto-updater initialization (only in packaged mode)
+if (app.isPackaged) {
+    try {
+        const updateElectronApp = require('update-electron-app');
+        if (typeof updateElectronApp === 'f') {
+            updateElectronApp({
+                repo: 'thiagocdi/MenuCDI',
+                updateInterval: '5 minutes',
+                logger: console,
+                notifyUser: true
+            });
+            console.log('[Auto-Update] Initialized');
+        } else {
+            console.warn('[Auto-Update] update-electron-app did not return a function');
+        }
+    } catch (error) {
+        console.warn('[Auto-Update] Failed to initialize:', error.message);
     }
-} catch (e) {
-    console.warn("Auto-update init failed:", e && e.message);
+} else {
+    console.log("[Auto-Update] Skipped in development mode");
 }
+
+// // Add auto-updater initialization right after imports
+// if (!app.isPackaged) {
+//     console.log("[Auto-Update] Skipped in development mode");
+// } else {
+	
+//     //   require('update-electron-app')({
+//     //     repo: 'thiagocdi/MenuCDI',
+//     //     updateInterval: '5 minutes', // Check every 5 minutes
+//     //     logger: console,
+//     //     notifyUser: true // Show notification when update is ready
+//     //   });
+//     //   console.log('[Auto-Update] Initialized');
+//     // Configure auto-updater
+//     autoUpdater.logger = console;
+//     autoUpdater.autoDownload = false; // Don't auto-download, ask user first
+//     autoUpdater.autoInstallOnAppQuit = true;
+
+//     // Check for updates on startup (after window is ready)
+//     app.on("ready", () => {
+//         setTimeout(() => {
+//             console.log("[Auto-Update] Checking for updates...");
+//             autoUpdater.checkForUpdates();
+//         }, 3000);
+//     });
+
+//     // Check every 10 minutes
+//     setInterval(
+//         () => {
+//             console.log("[Auto-Update] Periodic check for updates...");
+//             autoUpdater.checkForUpdates();
+//         },
+//         10 * 60 * 1000
+//     );
+
+//     // Event: Checking for update
+//     autoUpdater.on("checking-for-update", () => {
+//         console.log("[Auto-Update] Checking for updates...");
+//     });
+
+//     // Event: Update available
+//     autoUpdater.on("update-available", (info) => {
+//         console.log("[Auto-Update] Update available:", info.version);
+
+//         if (mainWindow && !mainWindow.isDestroyed()) {
+//             mainWindow.webContents.send("update-available", {
+//                 currentVersion: app.getVersion(),
+//                 newVersion: info.version,
+//                 releaseDate: info.releaseDate,
+//                 releaseNotes: info.releaseNotes,
+//             });
+//         }
+//     });
+
+//     // Event: No update available
+//     autoUpdater.on("update-not-available", (info) => {
+//         console.log(
+//             "[Auto-Update] No updates available. Current version:",
+//             app.getVersion()
+//         );
+//     });
+
+//     // Event: Update downloaded
+//     autoUpdater.on("update-downloaded", (info) => {
+//         console.log("[Auto-Update] Update downloaded:", info.version);
+
+//         if (mainWindow && !mainWindow.isDestroyed()) {
+//             mainWindow.webContents.send("update-downloaded", {
+//                 version: info.version,
+//             });
+//         }
+//     });
+
+//     // Event: Error
+//     autoUpdater.on("error", (error) => {
+//         console.error("[Auto-Update] Error:", error.message);
+//         console.error("[Auto-Update] Stack:", error.stack);
+//     });
+
+//     // Event: Download progress
+//     autoUpdater.on("download-progress", (progress) => {
+//         console.log(
+//             `[Auto-Update] Download progress: ${Math.round(progress.percent)}%`
+//         );
+
+//         if (mainWindow && !mainWindow.isDestroyed()) {
+//             mainWindow.webContents.send("update-progress", {
+//                 percent: progress.percent,
+//                 transferred: progress.transferred,
+//                 total: progress.total,
+//             });
+//         }
+//     });
+// }
+
+// Auth state
+let mainWindow;
+let authToken = null;
+let currentUser = null;
+let currentCompany = null;
 
 /**
  * normalizeApiBase(url)
@@ -61,11 +170,6 @@ function normalizeApiBase(url) {
 // Apply normalization at startup
 appConfig.apiBaseUrl = normalizeApiBase(appConfig.apiBaseUrl);
 
-// Auth state
-let authToken = null;
-let currentUser = null;
-let currentCompany = null;
-
 // Ensure AppUserModelId is set on Windows so taskbar icons and notifications work correctly
 if (process.platform === "win32") {
     try {
@@ -91,7 +195,9 @@ function createWindow() {
     // Check if appConfig.caminhoExecLocal has the final slash
     if (appConfig.caminhoExecLocal) {
         if (
-            !appConfig.caminhoExecLocal.endsWith("\\") && !appConfig.caminhoExecLocal.endsWith("/")) {
+            !appConfig.caminhoExecLocal.endsWith("\\") &&
+            !appConfig.caminhoExecLocal.endsWith("/")
+        ) {
             appConfig.caminhoExecLocal += "\\";
         }
     }
@@ -138,6 +244,32 @@ function createWindow() {
     // Em ambiente de desenvolvimento abrimos as DevTools para facilitar debug
     if (process.env.NODE_ENV === "development") {
         win.webContents.openDevTools();
+    }
+
+    // Aviso para administradores/usuários se o caminho base não estiver definido
+    if (
+        !appConfig.caminhoExecLocal ||
+        appConfig.caminhoExecLocal.trim() === ""
+    ) {
+        // Mostra uma mensagem modal curta orientando o que fazer (rodar o instalador ou criar a chave de registro)
+        try {
+            dialog.showMessageBox(win, {
+                type: "info",
+                title: "Caminho base não encontrado",
+                message:
+                    "O caminho base para os executáveis não foi localizado.\n\n" +
+                    "Solução:\n" +
+                    " - Crie o caminho C:\\Exec ou\n" +
+                    " - Crie a chave de registro: HKCU\\Software\\CDI\\CaminhoExecLocal com o caminho Exec local do usuário\n\n" +
+                    "Após isso, reinicie o MenuCDI.",
+                buttons: ["OK"],
+            });
+        } catch (e) {
+            console.warn(
+                "Falha ao exibir aviso de caminho base:",
+                e && e.message
+            );
+        }
     }
 
     return win;
@@ -460,16 +592,23 @@ ipcMain.handle("api-download-system-OLD", async (event, systemId) => {
         }
 
         // Determine filename safely
-        const disposition = response.headers && response.headers["content-disposition"];
-        let filename = getFilenameFromContentDisposition(disposition) || `${systemId}.zip`;
+        const disposition =
+            response.headers && response.headers["content-disposition"];
+        let filename =
+            getFilenameFromContentDisposition(disposition) || `${systemId}.zip`;
 
         // Sanitize filename: remove path components and illegal chars
         filename = path.basename(filename);
         // Replace quotes and control chars
-        filename = filename.replace(/["']/g, "").replace(/[\0<>:"/\\|?*\x00-\x1F]/g, "_");
+        filename = filename
+            .replace(/["']/g, "")
+            .replace(/[\0<>:"/\\|?*\x00-\x1F]/g, "_");
 
         // Ensure tmp dir exists
-        const tmpDir = path.join(appConfig.caminhoExecLocal || os.tmpdir(), "tmp");
+        const tmpDir = path.join(
+            appConfig.caminhoExecLocal || os.tmpdir(),
+            "tmp"
+        );
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
         const tmpPath = path.join(tmpDir, filename);
@@ -514,7 +653,11 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
             }
         );
 
-        console.log('download response headers', response.status, response.headers)
+        console.log(
+            "download response headers",
+            response.status,
+            response.headers
+        );
 
         // Helper: parse Content-Disposition safely (supports filename* RFC5987)
         function getFilenameFromContentDisposition(header) {
@@ -524,20 +667,36 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
                 let val = fnStarMatch[1].trim().replace(/^['"]+|['"]+$/g, "");
                 const rfcMatch = val.match(/^[^']*'[^']*'(.+)$/);
                 if (rfcMatch && rfcMatch[1]) {
-                    try { return decodeURIComponent(rfcMatch[1]); } catch (e) { return rfcMatch[1]; }
+                    try {
+                        return decodeURIComponent(rfcMatch[1]);
+                    } catch (e) {
+                        return rfcMatch[1];
+                    }
                 }
-                try { return decodeURIComponent(val); } catch (e) { return val; }
+                try {
+                    return decodeURIComponent(val);
+                } catch (e) {
+                    return val;
+                }
             }
             const fnMatch = header.match(/filename\s*=\s*("?)([^";]+)\1/i);
             if (fnMatch && fnMatch[2]) return fnMatch[2];
             return null;
         }
 
-        const disposition = response.headers && response.headers["content-disposition"];
-        let filename = getFilenameFromContentDisposition(disposition) || `${systemId}.zip`;
-        filename = path.basename(filename).replace(/["']/g, "").replace(/[\0<>:"/\\|?*\x00-\x1F]/g, "_");
+        const disposition =
+            response.headers && response.headers["content-disposition"];
+        let filename =
+            getFilenameFromContentDisposition(disposition) || `${systemId}.zip`;
+        filename = path
+            .basename(filename)
+            .replace(/["']/g, "")
+            .replace(/[\0<>:"/\\|?*\x00-\x1F]/g, "_");
 
-        const tmpDir = path.join(appConfig.caminhoExecLocal || os.tmpdir(), "tmp");
+        const tmpDir = path.join(
+            appConfig.caminhoExecLocal || os.tmpdir(),
+            "tmp"
+        );
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
         const tmpPath = path.join(tmpDir, filename);
@@ -554,14 +713,20 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
         return { success: true, path: tmpPath };
     } catch (error) {
         // Read and stringify possible stream/object response bodies (best-effort)
-        async function readStreamToString(stream, maxBytes = 200 * 1024, timeoutMs = 3000) {
+        async function readStreamToString(
+            stream,
+            maxBytes = 200 * 1024,
+            timeoutMs = 3000
+        ) {
             return new Promise((resolve, reject) => {
                 try {
                     const chunks = [];
                     let length = 0;
                     let done = false;
                     const onData = (chunk) => {
-                        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+                        const buf = Buffer.isBuffer(chunk)
+                            ? chunk
+                            : Buffer.from(String(chunk));
                         chunks.push(buf);
                         length += buf.length;
                         if (length >= maxBytes) {
@@ -586,9 +751,12 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
                     };
                     const cleanup = () => {
                         try {
-                            stream.removeListener && stream.removeListener("data", onData);
-                            stream.removeListener && stream.removeListener("end", onEnd);
-                            stream.removeListener && stream.removeListener("error", onError);
+                            stream.removeListener &&
+                                stream.removeListener("data", onData);
+                            stream.removeListener &&
+                                stream.removeListener("end", onEnd);
+                            stream.removeListener &&
+                                stream.removeListener("error", onError);
                         } catch (e) {}
                         clearTimeout(tmr);
                     };
@@ -608,7 +776,8 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
                 const { status, statusText, data } = error.response;
                 if (data) {
                     if (typeof data === "string") bodyStr = data;
-                    else if (Buffer.isBuffer(data)) bodyStr = data.toString("utf8");
+                    else if (Buffer.isBuffer(data))
+                        bodyStr = data.toString("utf8");
                     else if (data && typeof data.pipe === "function") {
                         try {
                             bodyStr = await readStreamToString(data);
@@ -616,10 +785,15 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
                             bodyStr = "[stream data]";
                         }
                     } else {
-                        try { bodyStr = JSON.stringify(data); } catch (_) { bodyStr = String(data); }
+                        try {
+                            bodyStr = JSON.stringify(data);
+                        } catch (_) {
+                            bodyStr = String(data);
+                        }
                     }
                 } else {
-                    bodyStr = `${status || ""} ${statusText || ""}`.trim() || bodyStr;
+                    bodyStr =
+                        `${status || ""} ${statusText || ""}`.trim() || bodyStr;
                 }
             }
         } catch (e) {
@@ -628,7 +802,11 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
 
         const status = error.response && error.response.status;
         const statusText = error.response && error.response.statusText;
-        console.error("Download system error:", { status, statusText, body: bodyStr });
+        console.error("Download system error:", {
+            status,
+            statusText,
+            body: bodyStr,
+        });
         throw new Error(`Download system failed: ${bodyStr}`);
     }
 });
@@ -650,10 +828,14 @@ ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
 
         // Resolve caminhos absolutos e evita extração fora da pasta permitida
         const resolvedZip = path.resolve(zipPath);
-        const resolvedDest = path.resolve(destDir || path.join(appConfig.caminhoExecLocal || os.tmpdir(), "tmp"));
+        const resolvedDest = path.resolve(
+            destDir ||
+                path.join(appConfig.caminhoExecLocal || os.tmpdir(), "tmp")
+        );
 
         // Garantir que a pasta destino exista
-        if (!fs.existsSync(resolvedDest)) fs.mkdirSync(resolvedDest, { recursive: true });
+        if (!fs.existsSync(resolvedDest))
+            fs.mkdirSync(resolvedDest, { recursive: true });
 
         // Abrir zip (API async)
         zip = new StreamZip.async({ file: resolvedZip });
@@ -669,18 +851,22 @@ ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
 
             if (entry.isDirectory) {
                 // garante diretório
-                if (!fs.existsSync(destPath)) fs.mkdirSync(destPath, { recursive: true });
+                if (!fs.existsSync(destPath))
+                    fs.mkdirSync(destPath, { recursive: true });
                 continue;
             }
 
             // garante diretório pai
             const parentDir = path.dirname(destPath);
-            if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true });
+            if (!fs.existsSync(parentDir))
+                fs.mkdirSync(parentDir, { recursive: true });
 
             // extrai o stream e grava em disco
             const readStream = await zip.stream(entryName);
             await new Promise((resolve, reject) => {
-                const writeStream = fs.createWriteStream(destPath, { flags: "w" });
+                const writeStream = fs.createWriteStream(destPath, {
+                    flags: "w",
+                });
                 readStream.pipe(writeStream);
                 readStream.on("error", (err) => reject(err));
                 writeStream.on("error", (err) => reject(err));
@@ -700,7 +886,8 @@ ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
                 }
 
                 // detectar magnitude: se for timestamp em segundos (~1e9) converte para ms
-                if (typeof mtimeMs === "number" && mtimeMs < 1e12) mtimeMs = mtimeMs * 1000;
+                if (typeof mtimeMs === "number" && mtimeMs < 1e12)
+                    mtimeMs = mtimeMs * 1000;
 
                 // Ajuste de timezone: muitos zips armazenam timestamp sem timezone.
                 // Para manter a data/hora exibida igual à original local (ex: Brasil UTC-3),
@@ -715,7 +902,11 @@ ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
                 fs.utimesSync(destPath, mtimeDate, mtimeDate);
             } catch (e) {
                 // se não for possível ajustar a data, apenas loga e continua
-                console.warn("Falha ao preservar mtime para", destPath, e && e.message);
+                console.warn(
+                    "Falha ao preservar mtime para",
+                    destPath,
+                    e && e.message
+                );
             }
         }
 
@@ -733,7 +924,7 @@ ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
     }
 });
 
-/** 
+/**
  * Handler: delete-file
  * Deleta um arquivo especificado por filePath.
  * Retorna { success: true } ou { success: false, message }
@@ -1026,7 +1217,6 @@ ipcMain.handle("get-app-version", () => {
     return app.getVersion();
 });
 
-
 /**
  * Determina o caminho local base (caminhoExecLocal) onde os EXEs/artefatos
  * devem ser procurados/gravados.
@@ -1045,10 +1235,16 @@ function ensureTrailingSep(p) {
     return norm.endsWith(path.sep) ? norm : norm + path.sep;
 }
 
-function determineCaminhoExecLocal() {
+function determineCaminhoExecLocal_OLD() {
     // 1) Prefer env var se explicitamente definida
-    if (process.env.CDI_CAMINHO_EXEC_LOCAL && process.env.CDI_CAMINHO_EXEC_LOCAL.trim()) {
-        console.log("Usando CDI_CAMINHO_EXEC_LOCAL:", process.env.CDI_CAMINHO_EXEC_LOCAL);
+    if (
+        process.env.CDI_CAMINHO_EXEC_LOCAL &&
+        process.env.CDI_CAMINHO_EXEC_LOCAL.trim()
+    ) {
+        console.log(
+            "Usando CDI_CAMINHO_EXEC_LOCAL:",
+            process.env.CDI_CAMINHO_EXEC_LOCAL
+        );
         return ensureTrailingSep(process.env.CDI_CAMINHO_EXEC_LOCAL.trim());
     }
 
@@ -1076,6 +1272,65 @@ function determineCaminhoExecLocal() {
     }
 }
 
+function determineCaminhoExecLocal() {
+    try {
+        // 1) Prefer common default folder C:\Exec if it exists
+        const commonPath = path.join("C:", "Exec");
+        if (
+            fs.existsSync(commonPath) &&
+            fs.statSync(commonPath).isDirectory()
+        ) {
+            console.log("Usando caminho padrão detectado C:\\Exec");
+            return ensureTrailingSep(commonPath);
+        }
+
+        // 2) Try registry key HKCU\Software\CDI -> value CaminhoExecLocal
+        if (process.platform === "win32") {
+            try {
+                // Ex: reg query "HKCU\Software\CDI" /v CaminhoExecLocal
+                const out = execSync(
+                    'reg query "HKCU\\Software\\CDI" /v CaminhoExecLocal',
+                    {
+                        stdio: ["ignore", "pipe", "ignore"],
+                        encoding: "utf8",
+                        timeout: 3000,
+                    }
+                );
+                if (out) {
+                    const m = out.match(
+                        /CaminhoExecLocal\s+REG_[A-Z_]+\s+(.*)/i
+                    );
+                    if (m && m[1]) {
+                        const val = m[1].trim();
+                        if (val) {
+                            console.log(
+                                "Usando CaminhoExecLocal do registry:",
+                                val
+                            );
+                            return ensureTrailingSep(val);
+                        }
+                    }
+                }
+            } catch (e) {
+                // não encontrou no registry — log para debug e continua
+                console.warn(
+                    "Cannot read CaminhoExecLocal from registry:",
+                    e && e.message
+                );
+            }
+        }
+
+        // 3) fallback: empty string (caller will handle notification)
+        console.warn(
+            "CaminhoExecLocal não encontrado (C:\\Exec ausente e registro CDI\\CaminhoExecLocal não preenchido)."
+        );
+        return "";
+    } catch (e) {
+        console.warn("determineCaminhoExecLocal error:", e && e.message);
+        return "";
+    }
+}
+
 /**
  * getApiBaseFromEnvOrRegistry()
  * - Primeiro tenta ler process.env.CDI_URL_API_MENU
@@ -1094,11 +1349,14 @@ function getApiBaseFromEnvOrRegistry() {
     if (process.platform === "win32") {
         try {
             // Ex: reg query "HKCU\Software\CDI" /v ApiBaseUrl
-            const out = execSync('reg query "HKCU\\Software\\CDI" /v ApiBaseUrl', {
-                stdio: ["ignore", "pipe", "ignore"],
-                encoding: "utf8",
-                timeout: 3000,
-            });
+            const out = execSync(
+                'reg query "HKCU\\Software\\CDI" /v ApiBaseUrl',
+                {
+                    stdio: ["ignore", "pipe", "ignore"],
+                    encoding: "utf8",
+                    timeout: 3000,
+                }
+            );
             if (out) {
                 // Saída típica:
                 // HKEY_CURRENT_USER\Software\CDI
@@ -1114,7 +1372,10 @@ function getApiBaseFromEnvOrRegistry() {
             }
         } catch (e) {
             // falha ao ler o registry — log para debug mas não interrompe
-            console.warn("Cannot read ApiBaseUrl from registry:", e && e.message);
+            console.warn(
+                "Cannot read ApiBaseUrl from registry:",
+                e && e.message
+            );
         }
     }
 
@@ -1122,3 +1383,158 @@ function getApiBaseFromEnvOrRegistry() {
     console.log("Usando fallback vazio para ApiBaseUrl");
     return "";
 }
+
+/**
+ * Handler: check-for-app-updates
+ * Manually checks for application updates via update.electronjs.org
+ * Returns update info if available
+ */
+ipcMain.handle('check-for-app-updates', async () => {
+    if (!app.isPackaged) {
+        return { 
+            available: false, 
+            message: 'Development mode - updates disabled',
+            currentVersion: app.getVersion()
+        };
+    }
+
+    try {
+        const currentVersion = app.getVersion();
+        const platform = process.platform;
+        const arch = process.arch;
+        
+        console.log(`[Auto-Update] Checking for updates: current=${currentVersion}, platform=${platform}, arch=${arch}`);
+        
+        const response = await axios.get(
+            `https://update.electronjs.org/thiagocdi/MenuCDI/${platform}-${arch}/${currentVersion}`,
+            { timeout: 10000 }
+        );
+
+        if (response.status === 200 && response.data) {
+            console.log('[Auto-Update] Update available:', response.data);
+            return {
+                available: true,
+                currentVersion,
+                latestVersion: response.data.name,
+                downloadUrl: response.data.url,
+                notes: response.data.notes || 'Nova versão disponível'
+            };
+        } else if (response.status === 204) {
+            console.log('[Auto-Update] Already up to date');
+            return {
+                available: false,
+                message: 'Você já está usando a versão mais recente',
+                currentVersion
+            };
+        }
+        
+        return {
+            available: false,
+            message: 'Nenhuma atualização disponível',
+            currentVersion
+        };
+    } catch (error) {
+        console.error('[Auto-Update] Check failed:', error.message);
+        
+        if (error.response && error.response.status === 204) {
+            return {
+                available: false,
+                message: 'Você já está usando a versão mais recente',
+                currentVersion: app.getVersion()
+            };
+        }
+        
+        return {
+            available: false,
+            error: error.message,
+            currentVersion: app.getVersion()
+        };
+    }
+});
+
+/**
+ * Handler: download-app-update
+ * Downloads the update installer to a temporary location
+ */
+ipcMain.handle('download-app-update', async (event, downloadUrl) => {
+    if (!app.isPackaged) {
+        return { success: false, message: 'Development mode' };
+    }
+
+    try {
+        console.log('[Auto-Update] Downloading update from:', downloadUrl);
+        
+        const response = await axios.get(downloadUrl, {
+            responseType: 'stream',
+            timeout: 300000 // 5 minutes for download
+        });
+
+        const tmpDir = path.join(os.tmpdir(), 'MenuCDI-Updates');
+        if (!fs.existsSync(tmpDir)) {
+            fs.mkdirSync(tmpDir, { recursive: true });
+        }
+
+        const filename = path.basename(downloadUrl);
+        const tmpPath = path.join(tmpDir, filename);
+
+        const writer = fs.createWriteStream(tmpPath);
+        
+        let downloadedBytes = 0;
+        const totalBytes = parseInt(response.headers['content-length'] || '0', 10);
+
+        response.data.on('data', (chunk) => {
+            downloadedBytes += chunk.length;
+            if (totalBytes > 0) {
+                const percent = Math.round((downloadedBytes / totalBytes) * 100);
+                event.sender.send('update-download-progress', { percent, downloadedBytes, totalBytes });
+            }
+        });
+
+        await new Promise((resolve, reject) => {
+            writer.on('finish', resolve);
+            writer.on('error', reject);
+            response.data.pipe(writer);
+        });
+
+        console.log('[Auto-Update] Download complete:', tmpPath);
+        return { success: true, path: tmpPath };
+    } catch (error) {
+        console.error('[Auto-Update] Download failed:', error.message);
+        return { success: false, message: error.message };
+    }
+});
+
+/**
+ * Handler: install-app-update
+ * Launches the downloaded installer and quits the current app
+ */
+ipcMain.handle('install-app-update', async (event, installerPath) => {
+    if (!app.isPackaged) {
+        return { success: false, message: 'Development mode' };
+    }
+
+    try {
+        console.log('[Auto-Update] Launching installer:', installerPath);
+        
+        if (!fs.existsSync(installerPath)) {
+            throw new Error('Installer file not found');
+        }
+
+        // Launch installer with elevated privileges
+        const { spawn } = require('child_process');
+        spawn(installerPath, [], {
+            detached: true,
+            stdio: 'ignore'
+        }).unref();
+
+        // Give the installer a moment to start, then quit
+        setTimeout(() => {
+            app.quit();
+        }, 1000);
+
+        return { success: true };
+    } catch (error) {
+        console.error('[Auto-Update] Install failed:', error.message);
+        return { success: false, message: error.message };
+    }
+});
