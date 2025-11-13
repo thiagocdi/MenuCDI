@@ -1,6 +1,6 @@
 {
 	"name": "menucdi",
-	"version": "1.0.21",
+	"version": "1.0.23",
 	"description": "Menu CDI Softwares Launcher",
 	"main": "main.js",
 	"author": "CDI Informática e Assessoria Ltda",
@@ -29,6 +29,7 @@
 	"devDependencies": {
 		"@electron-forge/cli": "^7.10.2",
 		"@electron-forge/maker-squirrel": "^7.10.2",
+		"@electron-forge/maker-zip": "^7.10.2",
 		"@electron-forge/publisher-github": "^7.10.2",
 		"electron": "22.3.27",
 		"electron-builder": "23.6.0",

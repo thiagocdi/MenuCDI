@@ -16,7 +16,7 @@ module.exports = {
                 exe: 'MenuCDI.exe',
                 iconUrl: 'https://raw.githubusercontent.com/thiagocdi/MenuCDI/main/assets/images/icon.ico',
                 setupIcon: './assets/images/icon.ico',
-                loadingGif: './assets/images/icon.ico',
+                loadingGif: './assets/images/installer.gif', // CHANGED: Use actual GIF file
                 noMsi: true,
                 // CRITICAL: These files are required by update.electronjs.org
                 remoteReleases: 'https://github.com/thiagocdi/MenuCDI',
