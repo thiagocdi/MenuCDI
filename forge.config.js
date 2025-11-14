@@ -36,7 +36,7 @@ module.exports = {
                     name: 'MenuCDI',
                 },
                 prerelease: false,
-                draft: true, // Creates as draft so you can review before publishing
+                draft: false, // Creates as draft so you can review before publishing
             },
         },
     ],

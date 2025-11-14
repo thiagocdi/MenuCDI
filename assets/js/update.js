@@ -101,7 +101,13 @@ document.getElementById('installUpdateBtn').addEventListener('click', async func
     this.disabled = true;
     
     try {
-        showToast('Instalando atualização... O aplicativo será fechado.', 'info');
+        showToast({
+            color: "info",
+            title: "Atualização",
+            message: "Instalando atualização... O aplicativo será fechado.",
+            duration: 3000,
+            autohide: true,
+        });
         
         setTimeout(async () => {
             const result = await window.electronAPI.installAppUpdate(downloadedInstallerPath);
@@ -111,7 +117,13 @@ document.getElementById('installUpdateBtn').addEventListener('click', async func
         }, 1000);
     } catch (error) {
         console.error('[UI] Install failed:', error);
-        showToast('Erro ao instalar atualização: ' + error.message, 'danger');
+        showToast({
+            color: "danger",
+            title: "Erro",
+            message: 'Erro ao instalar atualização: ' + error.message,
+            duration: 3000,
+            autohide: true,
+        });
         this.disabled = false;
     }
 });
