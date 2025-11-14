@@ -4,7 +4,6 @@
 // - shell: abrir caminhos/URLs no SO (p.ex. abrir pasta/exe)
 // - nativeImage: carregar imagens/icones nativos (para taskbar)
 const { app, BrowserWindow, ipcMain, nativeImage, dialog, } = require("electron");
-//const { autoUpdater } = require("electron-updater");
 const path = require("path"); // manipulação de caminhos cross-platform
 const fs = require("fs"); // acesso ao sistema de arquivos
 const axios = require("axios"); // cliente HTTP para chamadas de API
@@ -41,105 +40,9 @@ if (app.isPackaged) {
     console.log("[Auto-Update] Skipped in development mode");
 }
 
-// // Add auto-updater initialization right after imports
-// if (!app.isPackaged) {
-//     console.log("[Auto-Update] Skipped in development mode");
-// } else {
-	
-//     //   require('update-electron-app')({
-//     //     repo: 'thiagocdi/MenuCDI',
-//     //     updateInterval: '5 minutes', // Check every 5 minutes
-//     //     logger: console,
-//     //     notifyUser: true // Show notification when update is ready
-//     //   });
-//     //   console.log('[Auto-Update] Initialized');
-//     // Configure auto-updater
-//     autoUpdater.logger = console;
-//     autoUpdater.autoDownload = false; // Don't auto-download, ask user first
-//     autoUpdater.autoInstallOnAppQuit = true;
-
-//     // Check for updates on startup (after window is ready)
-//     app.on("ready", () => {
-//         setTimeout(() => {
-//             console.log("[Auto-Update] Checking for updates...");
-//             autoUpdater.checkForUpdates();
-//         }, 3000);
-//     });
-
-//     // Check every 10 minutes
-//     setInterval(
-//         () => {
-//             console.log("[Auto-Update] Periodic check for updates...");
-//             autoUpdater.checkForUpdates();
-//         },
-//         10 * 60 * 1000
-//     );
-
-//     // Event: Checking for update
-//     autoUpdater.on("checking-for-update", () => {
-//         console.log("[Auto-Update] Checking for updates...");
-//     });
-
-//     // Event: Update available
-//     autoUpdater.on("update-available", (info) => {
-//         console.log("[Auto-Update] Update available:", info.version);
-
-//         if (mainWindow && !mainWindow.isDestroyed()) {
-//             mainWindow.webContents.send("update-available", {
-//                 currentVersion: app.getVersion(),
-//                 newVersion: info.version,
-//                 releaseDate: info.releaseDate,
-//                 releaseNotes: info.releaseNotes,
-//             });
-//         }
-//     });
-
-//     // Event: No update available
-//     autoUpdater.on("update-not-available", (info) => {
-//         console.log(
-//             "[Auto-Update] No updates available. Current version:",
-//             app.getVersion()
-//         );
-//     });
-
-//     // Event: Update downloaded
-//     autoUpdater.on("update-downloaded", (info) => {
-//         console.log("[Auto-Update] Update downloaded:", info.version);
-
-//         if (mainWindow && !mainWindow.isDestroyed()) {
-//             mainWindow.webContents.send("update-downloaded", {
-//                 version: info.version,
-//             });
-//         }
-//     });
-
-//     // Event: Error
-//     autoUpdater.on("error", (error) => {
-//         console.error("[Auto-Update] Error:", error.message);
-//         console.error("[Auto-Update] Stack:", error.stack);
-//     });
-
-//     // Event: Download progress
-//     autoUpdater.on("download-progress", (progress) => {
-//         console.log(
-//             `[Auto-Update] Download progress: ${Math.round(progress.percent)}%`
-//         );
-
-//         if (mainWindow && !mainWindow.isDestroyed()) {
-//             mainWindow.webContents.send("update-progress", {
-//                 percent: progress.percent,
-//                 transferred: progress.transferred,
-//                 total: progress.total,
-//             });
-//         }
-//     });
-// }
-
 // Auth state
-let mainWindow;
 let authToken = null;
 let currentUser = null;
-let currentCompany = null;
 
 /**
  * normalizeApiBase(url)
@@ -179,6 +82,7 @@ if (process.platform === "win32") {
     }
 }
 
+function createWindow() {
 /**
  * createWindow()
  *
@@ -191,7 +95,7 @@ if (process.platform === "win32") {
  * - Caso queira persistir posição/tamanho do usuário, implementar um
  *   armazenamento de estado (não implementado neste patch)
  */
-function createWindow() {
+
     // Check if appConfig.caminhoExecLocal has the final slash
     if (appConfig.caminhoExecLocal) {
         if (
@@ -281,23 +185,24 @@ app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
 });
 
-// Configuration handlers
+ipcMain.handle("get-config", () => {
 /**
  * Handler: get-config
  * Retorna a configuração atual carregada no processo principal.
  * Usado pelo renderer para obter valores como apiBaseUrl e caminhoExecLocal.
  */
-ipcMain.handle("get-config", () => {
+
     return appConfig;
 });
 
+ipcMain.handle("set-config", (event, key, value) => {
 /**
  * Handler: set-config
  * Atualiza uma chave de configuração armazenada em memória no main process.
  * - Se a chave for `apiBaseUrl`, normalizamos o valor via normalizeApiBase.
  * Retorna true se a atualização foi aplicada.
  */
-ipcMain.handle("set-config", (event, key, value) => {
+
     if (key === "apiBaseUrl") {
         appConfig[key] = normalizeApiBase(value);
     } else {
@@ -306,14 +211,14 @@ ipcMain.handle("set-config", (event, key, value) => {
     return true;
 });
 
-// Auth API handlers
+ipcMain.handle("api-status", async () => {
 /**
  * Handler: api-status
  * Verifica se a API está acessível. Útil para mostrar erros de conectividade
  * antes do usuário tentar logar.
  * Retorna booleano (true = API respondeu 200).
  */
-ipcMain.handle("api-status", async () => {
+
     try {
         if (!appConfig.apiBaseUrl) return false;
         const response = await axios.get(`${appConfig.apiBaseUrl}/status`, {
@@ -331,6 +236,7 @@ ipcMain.handle("api-status", async () => {
     }
 });
 
+ipcMain.handle("api-login", async (event, { username, password, newPassword = "" }) => {
 /**
  * Handler: api-login
  * Faz a chamada de login para a API. Mapeamos o formato esperado pelo backend
@@ -339,9 +245,7 @@ ipcMain.handle("api-status", async () => {
  * - { success: true, user, token, ... }
  * - { success: false, message }
  */
-ipcMain.handle(
-    "api-login",
-    async (event, { username, password, newPassword = "" }) => {
+
         try {
             // Chamada principal ao endpoint de login (padrão documentado neste projeto)
             let response = await axios.post(
@@ -406,21 +310,23 @@ ipcMain.handle(
     }
 );
 
+ipcMain.handle("api-logout", () => {
 /**
  * Handler: api-logout
  * Limpa o estado de autenticação mantido no processo principal.
  */
-ipcMain.handle("api-logout", () => {
+
     authToken = null;
     currentUser = null;
     return true;
 });
 
+ipcMain.handle("get-auth-state", () => {
 /**
  * Handler: get-auth-state
  * Retorna o estado atual de autenticação para o renderer (usado em inicialização).
  */
-ipcMain.handle("get-auth-state", () => {
+
     return {
         isAuthenticated: !!authToken,
         user: currentUser,
@@ -428,6 +334,7 @@ ipcMain.handle("get-auth-state", () => {
     };
 });
 
+ipcMain.handle("api-get-systems", async () => {
 /**
  * Handler: api-get-systems
  * Busca a lista de sistemas/sistemasMenu disponíveis para o usuário autenticado.
@@ -435,7 +342,7 @@ ipcMain.handle("get-auth-state", () => {
  *   documentada (/sistemasMenu). Também descompacta a resposta caso o backend
  *   envolva um wrapper ApiResponse<T> (campo `data`).
  */
-ipcMain.handle("api-get-systems", async () => {
+
     try {
         if (!authToken) throw new Error("Not authenticated");
         // Try legacy endpoint first, then fallback to documented API sample
@@ -481,13 +388,14 @@ ipcMain.handle("api-get-systems", async () => {
     }
 });
 
+ipcMain.handle("api-get-system-version", async (event, systemId) => {
 /**
  * Handler: api-get-system-version
  * Recupera a versão do sistema remoto (usada para comparar com a versão local
  * e decidir se há necessidade de download/atualização).
  * - Tenta rota legada e depois `/sistema?IdSistema=...` conforme o sample API.
  */
-ipcMain.handle("api-get-system-version", async (event, systemId) => {
+
     try {
         if (!authToken) throw new Error("Not authenticated");
         // Try legacy route then fallback to API sample's /sistema?IdSistema=...
@@ -531,6 +439,7 @@ ipcMain.handle("api-get-system-version", async (event, systemId) => {
     }
 });
 
+ipcMain.handle("api-download-system-OLD", async (event, systemId) => {
 /**
  * Handler: api-download-system
  * Faz download do binário/zip do sistema no backend como stream e grava em
@@ -543,7 +452,6 @@ ipcMain.handle("api-get-system-version", async (event, systemId) => {
  * - Caso o backend retorne Content-Disposition com filename, usamos esse nome.
  */
 
-ipcMain.handle("api-download-system-OLD", async (event, systemId) => {
     try {
         if (!authToken) throw new Error("Not authenticated");
 
@@ -811,6 +719,7 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
     }
 });
 
+ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
 /**
  * Handler: extract-zip
  * Extrai um arquivo .zip para um diretório destino preservando as datas de
@@ -819,7 +728,7 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
  * - destDir: diretório de destino onde o conteúdo será extraído
  * Retorna: { success: true, dest } ou { success: false, message }
  */
-ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
+
     let zip;
     try {
         if (!zipPath || !fs.existsSync(zipPath)) {
@@ -924,12 +833,13 @@ ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
     }
 });
 
+ipcMain.handle("delete-file", async (event, filePath) => {
 /**
  * Handler: delete-file
  * Deleta um arquivo especificado por filePath.
  * Retorna { success: true } ou { success: false, message }
  */
-ipcMain.handle("delete-file", async (event, filePath) => {
+
     try {
         if (filePath && fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
@@ -943,13 +853,14 @@ ipcMain.handle("delete-file", async (event, filePath) => {
     }
 });
 
+ipcMain.handle("check-process", (event, processName) => {
 /**
  * Handler: check-process
  * Verifica se existe um processo em execução com o nome fornecido.
  * Retorna um array de objetos { name, pid } (no Windows) ou lista de PIDs no Linux.
  * Utiliza comandos nativos (`tasklist` no Windows, `pgrep` em Unix) para compatibilidade.
  */
-ipcMain.handle("check-process", (event, processName) => {
+
     return new Promise((resolve) => {
         const command =
             process.platform === "win32"
@@ -990,11 +901,12 @@ ipcMain.handle("check-process", (event, processName) => {
     });
 });
 
+ipcMain.handle("kill-process", (event, pid) => {
 /**
  * Handler: kill-process
  * Mata um processo pelo PID. Retorna true se a operação aparentemente teve sucesso.
  */
-ipcMain.handle("kill-process", (event, pid) => {
+
     return new Promise((resolve) => {
         const command =
             process.platform === "win32"
@@ -1007,6 +919,7 @@ ipcMain.handle("kill-process", (event, pid) => {
     });
 });
 
+ipcMain.handle("launch-exe-old", async (event, exePath, args = []) => {
 /**
  * Handler: launch-exe
  * Tenta lançar o executável indicado por `exePath` com argumentos `args`.
@@ -1023,7 +936,7 @@ ipcMain.handle("kill-process", (event, pid) => {
  * - O retorno `tried` facilita diagnosticar porque um caminho não foi encontrado
  *   (útil quando um nome foi concatenado sem barra, por exemplo).
  */
-ipcMain.handle("launch-exe", async (event, exePath, args = []) => {
+
     try {
         console.log(`launch-exe exePath: ${exePath}`);
         // Try multiple normalized paths before failing to give clearer diagnostics.
@@ -1115,6 +1028,231 @@ ipcMain.handle("launch-exe", async (event, exePath, args = []) => {
     }
 });
 
+ipcMain.handle("launch-exe", async (event, exePath, args = [], systemId = null) => {
+    try {
+        console.log(`[launch-exe] Starting with exePath: ${exePath}, systemId: ${systemId}`);
+        // Try multiple normalized paths before failing to give clearer diagnostics.
+        const tried = [];
+
+        function pushTry(p) {
+            if (!p) return;
+            const normalized = path.normalize(p);
+            if (!tried.includes(normalized)) tried.push(normalized);
+        }
+
+        pushTry(exePath);
+        pushTry(path.resolve(exePath));
+        // If path looks like 'D:Something' (missing backslash), insert one: 'D:\Something'
+        if (/^[a-zA-Z]:[^\\\/]/.test(exePath)) {
+            pushTry(exePath.replace(/^([a-zA-Z]:)/, "$1\\"));
+        }
+        // If it's a plain filename, try joining with configured caminhoExecLocal
+        if (!exePath.includes("\\") && !exePath.includes("/")) {
+            if (appConfig.caminhoExecLocal)
+                pushTry(path.join(appConfig.caminhoExecLocal, exePath));
+        }
+
+        // Finally, try with a trailing backslash on caminhoExecLocal if present
+        if (appConfig.caminhoExecLocal) {
+            const base = appConfig.caminhoExecLocal;
+            if (!base.endsWith("\\") && !base.endsWith("/"))
+                pushTry(path.join(base + "\\", exePath));
+        }
+
+        // Find first existing path
+        let found = tried.find((p) => {
+            try {
+                return fs.existsSync(p);
+            } catch {
+                return false;
+            }
+        });
+
+        // If not found yet, attempt to detect a missing separator between an existing folder
+        // and the rest of the filename. Example: "D:\ExecSHEVendas.exe" should be
+        // split as "D:\ExecSHE" + "Vendas.exe" -> "D:\ExecSHE\Vendas.exe".
+        if (!found) {
+            try {
+                for (let i = 3; i < exePath.length - 1; i++) {
+                    const left = exePath.slice(0, i);
+                    const right = exePath.slice(i);
+                    try {
+                        if (
+                            fs.existsSync(left) &&
+                            fs.statSync(left).isDirectory()
+                        ) {
+                            const candidate = path.join(left, right);
+                            pushTry(candidate);
+                            if (fs.existsSync(candidate)) {
+                                found = candidate;
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        // ignore and continue
+                    }
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        // If still not found and we have a systemId, attempt auto-download
+        if (!found && systemId) {
+            console.log(`[launch-exe] Arquivo não encontrado localmente. Iniciando download do sistema ${systemId}...`);
+            
+            try {
+                // Notify renderer about download start
+                event.sender.send('system-download-started', { systemId, exePath });
+                
+                // Download the system using correct POST endpoint
+                const downloadResult = await (async () => {
+                    try {
+                        if (!authToken) {
+                            throw new Error("Não autenticado");
+                        }
+
+                        console.log(`[launch-exe] Downloading system ${systemId}...`);
+                        
+                        const url = `${appConfig.apiBaseUrl}/downloadSistema?IdSistema=${systemId}`;
+                        console.log(`[launch-exe] POST request to: ${url}`);
+                        
+                        const response = await axios.post(url, null, {
+                            headers: { Authorization: `Bearer ${authToken}` },
+                            responseType: "arraybuffer",
+                            timeout: 300000, // 5 minutes
+                        });
+
+                        // Success! Save to temp directory
+                        const tmpDir = path.join(os.tmpdir(), "MenuCDI-Downloads");
+                        if (!fs.existsSync(tmpDir)) {
+                            fs.mkdirSync(tmpDir, { recursive: true });
+                        }
+
+                        const filename = `system_${systemId}_${Date.now()}.zip`;
+                        const tmpPath = path.join(tmpDir, filename);
+
+                        fs.writeFileSync(tmpPath, Buffer.from(response.data));
+
+                        console.log(`[launch-exe] System downloaded to: ${tmpPath}`);
+                        return { success: true, path: tmpPath };
+                        
+                    } catch (error) {
+                        console.error("[launch-exe] Download system error:", error.message);
+                        if (error.response) {
+                            console.error(`[launch-exe] Response status: ${error.response.status}`);
+                            console.error(`[launch-exe] Response data:`, error.response.data);
+                        }
+                        return { 
+                            success: false, 
+                            message: error.response?.data?.message || error.message 
+                        };
+                    }
+                })();
+
+                if (!downloadResult.success) {
+                    throw new Error(downloadResult.message || 'Download failed');
+                }
+
+                console.log(`[launch-exe] Download concluído: ${downloadResult.path}`);
+                event.sender.send('system-download-progress', { systemId, status: 'extracting' });
+
+                // Determine extraction directory from exePath
+                const destDir = path.dirname(tried[0] || exePath);
+                
+                // Extract the downloaded zip
+                const extractResult = await (async () => {
+                    try {
+                        console.log(`[launch-exe] Extracting ${downloadResult.path} to ${destDir}...`);
+                        
+                        const zip = new StreamZip.async({ file: downloadResult.path });
+                        await zip.extract(null, destDir);
+                        await zip.close();
+                        
+                        console.log(`[launch-exe] Extraction complete to: ${destDir}`);
+                        return { success: true, dest: destDir };
+                    } catch (error) {
+                        console.error("[launch-exe] Extract error:", error.message);
+                        return { success: false, message: error.message };
+                    }
+                })();
+
+                if (!extractResult.success) {
+                    throw new Error(extractResult.message || 'Extraction failed');
+                }
+
+                console.log(`[launch-exe] Extração concluída: ${extractResult.dest}`);
+
+                // Delete the downloaded zip file
+                try {
+                    if (fs.existsSync(downloadResult.path)) {
+                        fs.unlinkSync(downloadResult.path);
+                    }
+                } catch (e) {
+                    console.warn(`[launch-exe] Falha ao deletar arquivo temporário: ${e.message}`);
+                }
+
+                // Re-try to find the executable after extraction
+                found = tried.find((p) => {
+                    try {
+                        return fs.existsSync(p);
+                    } catch {
+                        return false;
+                    }
+                });
+
+                if (!found) {
+                    throw new Error('Arquivo ainda não encontrado após download e extração');
+                }
+
+                event.sender.send('system-download-complete', { systemId, path: found });
+                
+            } catch (downloadError) {
+                console.error('[launch-exe] Auto-download failed:', downloadError.message);
+                event.sender.send('system-download-failed', { 
+                    systemId, 
+                    error: downloadError.message 
+                });
+                
+                return {
+                    success: false,
+                    message: `Arquivo não encontrado e download falhou: ${downloadError.message}`,
+                    tried,
+                    autoDownloadAttempted: true
+                };
+            }
+        }
+
+        if (!found) {
+            // Return clearer error listing the attempted paths
+            return {
+                success: false,
+                message: systemId 
+                    ? "Arquivo não encontrado. Verifique se o systemId está correto para download automático."
+                    : "Arquivo não encontrado: " + exePath,
+                tried,
+            };
+        }
+
+        const proc = spawn(found, args, {
+            detached: true,
+            stdio: "ignore",
+            cwd: path.dirname(found),
+        });
+
+        proc.unref();
+        return { 
+            success: true, 
+            launched: found,
+            wasDownloaded: systemId ? true : undefined
+        };
+    } catch (error) {
+        console.error("[launch-exe] Launch exe error:", error.message);
+        return { success: false, message: error.message };
+    }
+});
+
+ipcMain.handle("get-file-version", (event, filePath) => {
 /**
  * Handler: get-file-version
  * Retorna uma indicação simples de versão do arquivo local. Atualmente
@@ -1122,25 +1260,7 @@ ipcMain.handle("launch-exe", async (event, exePath, args = []) => {
  * Nota: para um produto real, implementar leitura de versão do arquivo
  * (ex.: recurso de versão em exe no Windows) em vez deste placeholder.
  */
-// ipcMain.handle("get-file-version", (event, filePath) => {
-//     try {
-//         if (!fs.existsSync(filePath)) {
-//             return null;
-//         }
 
-//         // For Windows, we'll need to implement version reading
-//         // For now, return file modification time as version indicator
-//         const stats = fs.statSync(filePath);
-//         return {
-//             version: "1.0.0.0", // Placeholder - implement proper version reading
-//             modified: stats.mtime,
-//         };
-//     } catch (error) {
-//         console.error("Get file version error:", error.message);
-//         return null;
-//     }
-// });
-ipcMain.handle("get-file-version", (event, filePath) => {
     try {
         if (!fs.existsSync(filePath)) return null;
 
@@ -1157,12 +1277,13 @@ ipcMain.handle("get-file-version", (event, filePath) => {
     }
 });
 
+ipcMain.handle("ensure-directory", (event, dirPath) => {
 /**
  * Handler: ensure-directory
  * Garante que o diretório exista (cria de forma recursiva se necessário).
  * Retorna true em sucesso, false em falha.
  */
-ipcMain.handle("ensure-directory", (event, dirPath) => {
+
     try {
         if (!fs.existsSync(dirPath)) {
             fs.mkdirSync(dirPath, { recursive: true });
@@ -1174,13 +1295,14 @@ ipcMain.handle("ensure-directory", (event, dirPath) => {
     }
 });
 
+ipcMain.handle("move-file", (event, source, destination) => {
 /**
  * Handler: move-file
  * Move/renomeia um arquivo no filesystem. Retorna true/false indicando sucesso.
  * Observação: fs.renameSync pode falhar se o destino estiver em outro volume;
  * em situações mais complexas, usar copy+unlink.
  */
-ipcMain.handle("move-file", (event, source, destination) => {
+
     try {
         fs.renameSync(source, destination);
         return true;
@@ -1190,33 +1312,37 @@ ipcMain.handle("move-file", (event, source, destination) => {
     }
 });
 
+ipcMain.handle("navigate-to-main", (event) => {
 /**
  * Handler: navigate-to-main
  * Carrega a página principal (index.html) na janela que requisitou a navegação.
  */
-ipcMain.handle("navigate-to-main", (event) => {
+
     const win = BrowserWindow.fromWebContents(event.sender);
     win.loadFile("index.html");
 });
 
+ipcMain.handle("navigate-to-login", (event) => {
 /**
  * Handler: navigate-to-login
  * Carrega a tela de login (login.html) na janela que requisitou.
  */
-ipcMain.handle("navigate-to-login", (event) => {
+
     const win = BrowserWindow.fromWebContents(event.sender);
     win.loadFile("login.html");
 });
 
+ipcMain.handle("get-app-version", () => {
 /**
  * Handler: get-app-version
  * Retorna a versão da aplicação (definida em package.json) para exibição
  * no renderer ou para uso em lógica de atualização.
  */
-ipcMain.handle("get-app-version", () => {
+
     return app.getVersion();
 });
 
+function ensureTrailingSep(p) {
 /**
  * Determina o caminho local base (caminhoExecLocal) onde os EXEs/artefatos
  * devem ser procurados/gravados.
@@ -1229,47 +1355,10 @@ ipcMain.handle("get-app-version", () => {
  *
  * Garante que o caminho retornado termine com separador (backslash no Windows).
  */
-function ensureTrailingSep(p) {
+
     if (!p) return p || "";
     const norm = path.normalize(p);
     return norm.endsWith(path.sep) ? norm : norm + path.sep;
-}
-
-function determineCaminhoExecLocal_OLD() {
-    // 1) Prefer env var se explicitamente definida
-    if (
-        process.env.CDI_CAMINHO_EXEC_LOCAL &&
-        process.env.CDI_CAMINHO_EXEC_LOCAL.trim()
-    ) {
-        console.log(
-            "Usando CDI_CAMINHO_EXEC_LOCAL:",
-            process.env.CDI_CAMINHO_EXEC_LOCAL
-        );
-        return ensureTrailingSep(process.env.CDI_CAMINHO_EXEC_LOCAL.trim());
-    }
-
-    try {
-        // 2) Quando empacotado, usamos process.execPath
-        // ex: process.execPath = "D:\Exec\win-unpacked\MenuCDI.exe"
-        if (app && app.isPackaged) {
-            const execDir = path.dirname(process.execPath); // D:\Exec\win-unpacked
-            const parent = path.dirname(execDir); // D:\Exec
-
-            console.log("Usando caminho do executável:", parent);
-            return ensureTrailingSep(parent);
-        }
-
-        // 3) Modo desenvolvimento: use o diretório pai de __dirname
-        const devDir = path.resolve(__dirname); // ...\MenuCDI
-        const devParent = path.dirname(devDir);
-
-        console.log("Usando caminho de desenvolvimento:", devParent);
-        return ensureTrailingSep(devParent);
-    } catch (e) {
-        // Em caso de qualquer erro, retorna string vazia (o resto do app lida com isso)
-        console.warn("determineCaminhoExecLocal error:", e && e.message);
-        return "";
-    }
 }
 
 function determineCaminhoExecLocal() {
@@ -1331,13 +1420,14 @@ function determineCaminhoExecLocal() {
     }
 }
 
+function getApiBaseFromEnvOrRegistry() {
 /**
  * getApiBaseFromEnvOrRegistry()
  * - Primeiro tenta ler process.env.CDI_URL_API_MENU
  * - Se não definido e estamos no Windows, tenta ler HKCU\Software\CDI\ApiBaseUrl via `reg query`
  * - Retorna string (ou "") sempre que não encontrar valor
  */
-function getApiBaseFromEnvOrRegistry() {
+
     // 1) prefer env var
     const envVal = process.env.CDI_URL_API_MENU;
     if (envVal && String(envVal).trim()) {
@@ -1384,12 +1474,13 @@ function getApiBaseFromEnvOrRegistry() {
     return "";
 }
 
+ipcMain.handle('check-for-app-updates', async () => {
 /**
  * Handler: check-for-app-updates
  * Manually checks for application updates via update.electronjs.org
  * Returns update info if available
  */
-ipcMain.handle('check-for-app-updates', async () => {
+
     if (!app.isPackaged) {
         return { 
             available: false, 
@@ -1452,11 +1543,12 @@ ipcMain.handle('check-for-app-updates', async () => {
     }
 });
 
+ipcMain.handle('download-app-update', async (event, downloadUrl) => {
 /**
  * Handler: download-app-update
  * Downloads the update installer to a temporary location
  */
-ipcMain.handle('download-app-update', async (event, downloadUrl) => {
+
     if (!app.isPackaged) {
         return { success: false, message: 'Development mode' };
     }
@@ -1504,11 +1596,12 @@ ipcMain.handle('download-app-update', async (event, downloadUrl) => {
     }
 });
 
+ipcMain.handle('install-app-update', async (event, installerPath) => {
 /**
  * Handler: install-app-update
  * Launches the downloaded installer and quits the current app
  */
-ipcMain.handle('install-app-update', async (event, installerPath) => {
+
     if (!app.isPackaged) {
         return { success: false, message: 'Development mode' };
     }

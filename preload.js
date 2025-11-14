@@ -23,10 +23,37 @@ contextBridge.exposeInMainWorld("electronAPI", {
     killProcess: (pid) => ipcRenderer.invoke("kill-process", pid),
 
     // File operations
-    launchExe: (exePath, args) => ipcRenderer.invoke("launch-exe", exePath, args),
+    //launchExe: (exePath, args) => ipcRenderer.invoke("launch-exe", exePath, args),
+    launchExe: (exePath, args, systemId) => ipcRenderer.invoke('launch-exe', exePath, args, systemId),
+
     getFileVersion: (filePath) => ipcRenderer.invoke("get-file-version", filePath),
     ensureDirectory: (dirPath) => ipcRenderer.invoke("ensure-directory", dirPath),
     moveFile: (source, destination) => ipcRenderer.invoke("move-file", source, destination),
+
+    // System download events
+    onSystemDownloadStarted: (callback) => {
+        const subscription = (event, data) => callback(event, data);
+        ipcRenderer.on('system-download-started', subscription);
+        return () => ipcRenderer.removeListener('system-download-started', subscription);
+    },
+    
+    onSystemDownloadProgress: (callback) => {
+        const subscription = (event, data) => callback(event, data);
+        ipcRenderer.on('system-download-progress', subscription);
+        return () => ipcRenderer.removeListener('system-download-progress', subscription);
+    },
+    
+    onSystemDownloadComplete: (callback) => {
+        const subscription = (event, data) => callback(event, data);
+        ipcRenderer.on('system-download-complete', subscription);
+        return () => ipcRenderer.removeListener('system-download-complete', subscription);
+    },
+    
+    onSystemDownloadFailed: (callback) => {
+        const subscription = (event, data) => callback(event, data);
+        ipcRenderer.on('system-download-failed', subscription);
+        return () => ipcRenderer.removeListener('system-download-failed', subscription);
+    },
 
     // Navigation
     navigateToMain: () => ipcRenderer.invoke("navigate-to-main"),

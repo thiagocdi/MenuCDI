@@ -182,18 +182,24 @@ async function handleMenuClick(item) {
         // Check for updates in background
         checkForUpdates(item, tmpDir);
 
-        // Launch the application
+        // Launch the application with systemId for auto-download
         showLoading(true, `Executando ${item.title}...`);
 
-        const result = await window.electronAPI.launchExe(exePath, [
-            currentUser?.username || "",
-        ]);
+        const result = await window.electronAPI.launchExe(
+            exePath, 
+            [currentUser?.username || ""],
+            item.idSistema  // ← ADICIONADO: Pass systemId for auto-download
+        );
 
         if (result.success) {
+            const message = result.wasDownloaded 
+                ? `${item.title} foi baixado e executado com sucesso!`
+                : `${item.title} foi executado com sucesso!`;
+                
             showToast({
                 color: "success",
                 title: "Sucesso",
-                message: `${item.title} foi executado com sucesso!`,
+                message: message,
                 duration: 3000,
                 autohide: true,
             });
@@ -310,6 +316,45 @@ async function downloadUpdate(item, tmpDir) {
     }
 }
 
+// System download event listeners
+window.electronAPI.onSystemDownloadStarted((event, data) => {
+    console.log('[System Download] Started:', data);
+    // Extract filename from path manually (Windows-style)
+    const filename = data.exePath.split('\\').pop() || 'arquivo';
+    showLoading(true, `Baixando ${filename}...`);
+});
+
+window.electronAPI.onSystemDownloadProgress((event, data) => {
+    console.log('[System Download] Progress:', data);
+    if (data.status === 'extracting') {
+        showLoading(true, 'Extraindo arquivos...');
+    }
+});
+
+window.electronAPI.onSystemDownloadComplete((event, data) => {
+    console.log('[System Download] Complete:', data);
+    showLoading(false);
+    showToast({
+        color: "success",
+        title: "Download Completo",
+        message: "Sistema baixado e instalado com sucesso!",
+        duration: 3000,
+        autohide: true,
+    });
+});
+
+window.electronAPI.onSystemDownloadFailed((event, data) => {
+    console.log('[System Download] Failed:', data);
+    showLoading(false);
+    showToast({
+        color: "danger",
+        title: "Erro no Download",
+        message: `Falha ao baixar sistema: ${data.error}`,
+        duration: 5000,
+        autohide: true,
+    });
+});
+
 // Event listeners
 logoutBtn.addEventListener("click", async () => {
     const confirmLogout = await showConfirmModal(
@@ -407,4 +452,80 @@ function compareVersions(a, b) {
         if (ai < bi) return -1;
     }
     return 0;
+}
+
+async function launchSystem(system) {
+    try {
+        showLoading(true, `Verificando ${system.nome}...`);
+
+        const exePath = system.caminho;
+        // Extract filename manually (Windows-style) since path module is not available in renderer
+        const processName = exePath.split('\\').pop().replace('.exe', '');
+
+        // Check if process is running
+        const runningProcesses = await window.electronAPI.checkProcess(processName);
+
+        if (runningProcesses && runningProcesses.length > 0) {
+            showLoading(false);
+            
+            const shouldKill = await showConfirmModal(
+                `${system.nome} já está em execução. Deseja fechar e reiniciar?`
+            );
+
+            if (!shouldKill) return;
+
+            showLoading(true, `Encerrando ${system.nome}...`);
+
+            for (const proc of runningProcesses) {
+                await window.electronAPI.killProcess(proc.pid);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        showLoading(true, `Iniciando ${system.nome}...`);
+
+        const username = currentUser?.username || "";
+        
+        // Pass systemId for auto-download if file not found
+        const result = await window.electronAPI.launchExe(
+            exePath, 
+            [username],
+            system.id  // Pass systemId for auto-download
+        );
+
+        showLoading(false);
+
+        if (result.success) {
+            const message = result.wasDownloaded 
+                ? `${system.nome} foi baixado e iniciado com sucesso!`
+                : `${system.nome} iniciado com sucesso!`;
+                
+            showToast({
+                color: "success",
+                title: "Sucesso",
+                message: message,
+                duration: 3000,
+                autohide: true,
+            });
+        } else {
+            showToast({
+                color: "danger",
+                title: "Erro ao Iniciar",
+                message: result.message || `Falha ao iniciar ${system.nome}`,
+                duration: 5000,
+                autohide: true,
+            });
+        }
+    } catch (error) {
+        showLoading(false);
+        console.error('Launch error:', error);
+        showToast({
+            color: "danger",
+            title: "Erro",
+            message: error.message || 'Erro ao iniciar sistema',
+            duration: 5000,
+            autohide: true,
+        });
+    }
 }
