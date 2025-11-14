@@ -3,6 +3,8 @@ let isLoading = false;
 let currentUser = null;
 let menuItems = [];
 let appConfig = {};
+// Track ongoing downloads per system ID
+let downloadingSystemIds = new Set();
 
 // DOM elements
 const loadingOverlay = document.getElementById("loading-overlay");
@@ -131,6 +133,18 @@ function renderMenuItems() {
 
 async function handleMenuClick(item) {
     try {
+        // Check if system is currently being downloaded/updated
+        if (downloadingSystemIds.has(item.idSistema)) {
+            showToast({
+                color: "info",
+                title: "Aguarde",
+                message: `${item.title} está sendo atualizado em segundo plano. Aguarde a conclusão.`,
+                duration: 4000,
+                autohide: true,
+            });
+            return;
+        }
+
         showLoading(true, `Iniciando ${item.title}...`);
 
         const exePath = `${appConfig.caminhoExecLocal}${item.action}`;
@@ -179,8 +193,8 @@ async function handleMenuClick(item) {
             await window.electronAPI.moveFile(tmpExePath, exePath);
         }
 
-        // Check for updates in background
-        checkForUpdates(item, tmpDir);
+        // Check for updates in background (won't start if already downloading)
+        checkForSystemUpdates(item, tmpDir);
 
         // Launch the application with systemId for auto-download
         showLoading(true, `Executando ${item.title}...`);
@@ -188,7 +202,7 @@ async function handleMenuClick(item) {
         const result = await window.electronAPI.launchExe(
             exePath, 
             [currentUser?.username || ""],
-            item.idSistema  // ← ADICIONADO: Pass systemId for auto-download
+            item.idSistema
         );
 
         if (result.success) {
@@ -226,8 +240,15 @@ async function handleMenuClick(item) {
     }
 }
 
-async function checkForUpdates(item, tmpDir) {
-    console.log(`checkForUpdates(${item}, ${tmpDir})`)
+async function checkForSystemUpdates(item, tmpDir) {
+    console.log(`checkForSystemUpdates(${item.title}, ${tmpDir})`);
+    
+    // Check if already downloading
+    if (downloadingSystemIds.has(item.idSistema)) {
+        console.log(`System ${item.idSistema} is already downloading, skipping...`);
+        return;
+    }
+    
     try {
         // This runs in background, don't show loading
         const sistema = await window.electronAPI.getSystemVersion(
@@ -245,13 +266,9 @@ async function checkForUpdates(item, tmpDir) {
         console.log("localVersion", localVersion);
 
         if (localVersion && sistema.versao) {
-            // Simple version comparison (you might want to implement proper semver comparison)
-            //const localVersionString = localVersion.version || "0.0.0.0";
-            //const serverVersionString = sistema.versao || "0.0.0.0";
             const localVersionString = normalizeVersionString(localVersion.version || "0.0.0");
             const serverVersionString = normalizeVersionString(sistema.versao || "0.0.0");
 
-            // Use numeric comparison instead of simple string inequality
             const cmp = compareVersions(serverVersionString, localVersionString);
 
             console.log(`Version compare: server=${serverVersionString} local=${localVersionString} cmp=${cmp}`);
@@ -261,8 +278,11 @@ async function checkForUpdates(item, tmpDir) {
                     `Update available for ${item.title}: ${localVersionString} -> ${serverVersionString}`
                 );
 
+                // Mark as downloading
+                downloadingSystemIds.add(item.idSistema);
+
                 // Download update in background and return downloaded path
-                const downloadResp = await downloadUpdate(item, tmpDir);
+                const downloadResp = await downloadSystemUpdate(item, tmpDir);
                 if (downloadResp && downloadResp.path) {
                     // Try to extract the downloaded zip to tmpDir
                     try {
@@ -274,6 +294,15 @@ async function checkForUpdates(item, tmpDir) {
                             if (tmpFileExists) {
                                 //delete the .zip file
                                 await window.electronAPI.deleteFile(downloadResp.path);
+                                
+                                // Show success notification
+                                showToast({
+                                    color: "success",
+                                    title: "Atualização Concluída",
+                                    message: `${item.title} foi atualizado! Pode abrir novamente.`,
+                                    duration: 5000,
+                                    autohide: true,
+                                });
                             } else {
                                 console.warn(`Extracted but tmp exe not found at ${tmpExePath}`);
                             }
@@ -284,34 +313,35 @@ async function checkForUpdates(item, tmpDir) {
                         console.error("Extraction/apply update error:", err);
                     }
                 }
+                
+                // Remove from downloading set
+                downloadingSystemIds.delete(item.idSistema);
             } else {
                 console.log(`No update required for ${item.title} (server ${serverVersionString} <= local ${localVersionString})`);
             }
         }
     } catch (error) {
-        console.error("Update check error:", error);
-        // Don't show error to user for background operation
+        console.error("System update check error:", error);
+        // Remove from downloading set on error
+        downloadingSystemIds.delete(item.idSistema);
     }
 }
 
-async function downloadUpdate(item, tmpDir) {
+async function downloadSystemUpdate(item, tmpDir) {
     try {
-        console.log(`Downloading update for ${item.title}...`);
+        console.log(`Downloading system update for ${item.title}...`);
 
-        // Note: This is a simplified version. In a real implementation,
-        // you'd need to handle the stream download properly
         const response = await window.electronAPI.downloadSystem(
             item.idSistema
         );
 
         if (response) {
-            console.log(`Update downloaded for ${item.title}`);
-            // The actual file download and extraction would happen in the main process
+            console.log(`System update downloaded for ${item.title}`);
             return response;
         }
         return null;
     } catch (error) {
-        console.error("Download update error:", error);
+        console.error("Download system update error:", error);
         return null;
     }
 }
