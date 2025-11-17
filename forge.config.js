@@ -14,11 +14,11 @@ module.exports = {
                 name: 'MenuCDI',
                 authors: 'CDI Informática e Assessoria Ltda',
                 exe: 'MenuCDI.exe',
+                setupExe: 'MenuCDI-Setup.exe',
                 iconUrl: 'https://raw.githubusercontent.com/thiagocdi/MenuCDI/main/assets/images/icon.ico',
                 setupIcon: './assets/images/icon.ico',
-                loadingGif: './assets/images/installer.gif', // CHANGED: Use actual GIF file
+                loadingGif: './assets/images/installer.gif',
                 noMsi: true,
-                // CRITICAL: These files are required by update.electronjs.org
                 remoteReleases: 'https://github.com/thiagocdi/MenuCDI',
             },
         },
@@ -36,7 +36,7 @@ module.exports = {
                     name: 'MenuCDI',
                 },
                 prerelease: false,
-                draft: false, // Creates as draft so you can review before publishing
+                draft: false,
             },
         },
     ],

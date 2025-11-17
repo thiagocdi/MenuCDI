@@ -1,6 +1,6 @@
 {
 	"name": "menucdi",
-	"version": "1.0.27",
+	"version": "1.0.29",
 	"description": "Menu CDI Softwares Launcher",
 	"main": "main.js",
 	"author": "CDI Informática e Assessoria Ltda",
@@ -22,6 +22,7 @@
 	},
 	"dependencies": {
 		"axios": "^1.6.0",
+		"electron-squirrel-startup": "^1.0.1",
 		"node-stream-zip": "^1.15.0",
 		"update-electron-app": "^3.1.1",
 		"win-version-info": "^6.0.1"
@@ -54,9 +55,20 @@
 		],
 		"win": {
 			"target": [
-				"squirrel"
+				{
+					"target": "squirrel",
+					"arch": [
+						"x64"
+					]
+				}
 			],
 			"icon": "assets/images/icon.ico"
+		},
+		"squirrelWindows": {
+			"iconUrl": "https://raw.githubusercontent.com/thiagocdi/MenuCDI/main/assets/images/icon.ico",
+			"loadingGif": "assets/images/installer.gif",
+			"createDesktopShortcut": true,
+			"createStartMenuShortcut": true
 		},
 		"publish": [
 			{

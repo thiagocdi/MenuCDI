@@ -60,6 +60,14 @@ async function initializePage() {
             filial.textContent = localStorage.getItem("filial") || "";
         }
 
+        const userId = localStorage.getItem("lastUsername");
+        if (userId && userId.toUpperCase() === "ADM") {
+            const installBtn = document.getElementById("install-btn");
+            if (installBtn) {
+                installBtn.classList.remove("d-none");
+            }
+        }
+
 
     } catch (error) {
         console.error("Initialization error:", error);
@@ -408,6 +416,15 @@ logoutBtn.addEventListener("click", async () => {
         }
     }
 });
+
+// Install button event listener (only visible for ADM users)
+const installBtn = document.getElementById("install-btn");
+if (installBtn) {
+    installBtn.addEventListener("click", () => {
+        const installerUrl = "http://145.223.26.230/cdi4cbbf9c648c05/InstalacaoCDI.zip";
+        window.electronAPI.openExternal(installerUrl);
+    });
+}
 
 // Initialize page when DOM is loaded
 document.addEventListener("DOMContentLoaded", initializePage);

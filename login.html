@@ -46,6 +46,15 @@
 					<h3 id="logo-text" style="display: none; color: #023c54; font-weight: bold;">MenuCDI</h3>
 				</div>
 
+				<span id="versao" class="badge text-bg-primary position-absolute font-monospace" style="right: 10px;
+				font-size: 10px;
+				top: 10px;
+				height: 16px;
+				display: flex;
+				flex-direction: column;
+				flex-wrap: nowrap;
+				justify-content: space-evenly;"></span>
+
 				<form id="loginForm">
 					<div class="form-floating mb-3">
 						<input type="text" id="username" class="form-control" placeholder="Usuário" maxlength="3"
@@ -91,9 +100,10 @@
 
 				</form>
 
-				<div class="mt-3 text-center">
-					<small class="text-muted">CDI Informática e Assessoria Ltda.</small>
-				</div>
+			<div class="mt-3 text-center">
+				<small class="text-muted" style="font-size: 12px;">CDI Informática e Assessoria Ltda.</small>
+				<small id="apiUrl" class="d-none" style="font-size: 10px; color: lightskyblue"></small>
+			</div>
 			</div>
 		</div>
 	</div>

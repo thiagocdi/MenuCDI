@@ -1,5 +1,6 @@
 body {
-    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    /* background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); */
+    background: #f8f9fa;
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
@@ -156,7 +157,7 @@ body {
     color: white;
     position: absolute;
     top: 0.5rem;
-    right: 1rem;
+    right: 0.5rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem rgba(255, 255, 255, 0.1);
 }
@@ -245,7 +246,7 @@ body {
     white-space: nowrap; /* Prevent wrapping to a new line */
     overflow: hidden; /* Hide overflowing text */
     text-overflow: ellipsis; /* Add "..." when truncated */
-    max-width: 273px; /* Adjust to your layout */
+    max-width: 277px; /* Adjust to your layout */
     display: block; /* Required for text-overflow to work properly */
 }
 

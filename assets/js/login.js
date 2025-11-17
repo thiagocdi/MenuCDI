@@ -18,6 +18,9 @@ const newPasswordContainer = document.getElementById("new-password-container");
 const newPasswordInput = document.getElementById("newPassword");
 const toggleNewPassword = document.getElementById("toggleNewPassword");
 
+const version = document.getElementById("versao");
+const spanApiUrl = document.getElementById("apiUrl");
+
 togglePassword.addEventListener("click", () => {
     const type =
         passwordInput.getAttribute("type") === "password" ? "text" : "password";
@@ -56,6 +59,18 @@ function showLoading(state) {
 function handleUserInput(event) {
     // Convert to uppercase as user types (like MAUI version)
     event.target.value = event.target.value.toUpperCase();
+    
+    // Show/hide API URL based on username
+    if (event.target.id === "username") {
+        if (spanApiUrl) {
+            if (event.target.value.toUpperCase() === "ADM") {
+                spanApiUrl.classList.remove("d-none");
+            } else {
+                spanApiUrl.classList.add("d-none");
+            }
+        }
+    }
+    
     // wait for 50ms and focus on password input if username length is 3
     if (event.target.id === "username" && event.target.value.length === 3) {
         setTimeout(() => {
@@ -175,6 +190,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (authState.isAuthenticated) {
             await window.electronAPI.navigateToMain();
             return;
+        }
+
+        if (version) {
+            version.textContent = await window.electronAPI.getVersion();
+        }
+
+        const config = await window.electronAPI.getConfig();
+        if (spanApiUrl) {
+            spanApiUrl.textContent = `${config.apiBaseUrl || 'Not configured'}`;
         }
 
         // Check API status on load

@@ -12,6 +12,100 @@ const { spawn, exec, execSync } = require("child_process"); // spawn/exec/execSy
 const os = require("os"); // informações do sistema
 const winVersionInfo = require("win-version-info"); // obter versão do executável no Windows
 
+// CRITICAL: Handle Squirrel events FIRST, before any other app logic
+// This must run before app.whenReady() or createWindow()
+if (process.platform === 'win32') {
+    const handleSquirrelEvent = () => {
+        if (process.argv.length === 1) {
+            return false;
+        }
+
+        const appFolder = path.resolve(process.execPath, '..');
+        const rootAtomFolder = path.resolve(appFolder, '..');
+        const updateDotExe = path.resolve(path.join(rootAtomFolder, 'Update.exe'));
+        const exeName = path.basename(process.execPath);
+
+        const spawnSquirrel = function(command, args) {
+            let spawnedProcess;
+            try {
+                spawnedProcess = require('child_process').spawn(command, args, { 
+                    detached: true,
+                    stdio: 'ignore'
+                });
+            } catch (error) {
+                console.error('Squirrel event error:', error);
+            }
+            return spawnedProcess;
+        };
+
+        const spawnUpdate = function(args) {
+            return spawnSquirrel(updateDotExe, args);
+        };
+
+        const squirrelEvent = process.argv[1];
+        console.log('[Squirrel] Event received:', squirrelEvent);
+        
+        switch (squirrelEvent) {
+            case '--squirrel-install':
+            case '--squirrel-updated':
+                // Create desktop shortcut with explicit description
+                console.log('[Squirrel] Creating shortcuts...');
+                spawnUpdate([
+                    '--createShortcut', exeName,
+                    '--shortcut-locations', 'Desktop,StartMenu',
+                    '--shortcutDescription', 'MenuCDI - Launcher de Sistemas CDI'
+                ]);
+                setTimeout(() => {
+                    console.log('[Squirrel] Install/update complete, quitting...');
+                    app.quit();
+                }, 1000);
+                return true;
+
+            case '--squirrel-uninstall':
+                // Remove desktop shortcut
+                console.log('[Squirrel] Removing shortcuts...');
+                spawnUpdate(['--removeShortcut', exeName]);
+                setTimeout(() => {
+                    console.log('[Squirrel] Uninstall complete, quitting...');
+                    app.quit();
+                }, 1000);
+                return true;
+
+            case '--squirrel-obsolete':
+                console.log('[Squirrel] Obsolete version, quitting...');
+                app.quit();
+                return true;
+        }
+
+        return false;
+    };
+
+    if (handleSquirrelEvent()) {
+        // Squirrel event handled, exit immediately without starting the app
+        console.log('[Squirrel] Event handled, exiting process...');
+        // Don't run ANY other code - just exit
+        return;
+    }
+}
+
+
+// CRITICAL: Single instance lock - prevent multiple instances
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+    console.log('[Single Instance] Another instance is already running. Quitting...');
+    app.quit();
+} else {
+    // Handle second instance attempt - focus the existing window
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
+        console.log('[Single Instance] Second instance detected. Focusing existing window...');
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
+    });
+}
+
 // Configuration
 let appConfig = {
     apiBaseUrl: getApiBaseFromEnvOrRegistry() || "",
@@ -1628,6 +1722,19 @@ ipcMain.handle('install-app-update', async (event, installerPath) => {
         return { success: true };
     } catch (error) {
         console.error('[Auto-Update] Install failed:', error.message);
+        return { success: false, message: error.message };
+    }
+});
+
+// Handler: open-external
+// Opens a URL in the default browser
+ipcMain.handle('open-external', async (event, url) => {
+    try {
+        const { shell } = require('electron');
+        await shell.openExternal(url);
+        return { success: true };
+    } catch (error) {
+        console.error('[open-external] Error:', error.message);
         return { success: false, message: error.message };
     }
 });
