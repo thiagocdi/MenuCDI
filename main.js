@@ -89,6 +89,9 @@ if (process.platform === 'win32') {
 }
 
 
+// Global window reference
+let mainWindow = null;
+
 // CRITICAL: Single instance lock - prevent multiple instances
 const gotTheLock = app.requestSingleInstanceLock();
 
@@ -273,7 +276,9 @@ function createWindow() {
     return win;
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+    mainWindow = createWindow();
+});
 
 app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();

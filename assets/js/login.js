@@ -21,6 +21,8 @@ const toggleNewPassword = document.getElementById("toggleNewPassword");
 const version = document.getElementById("versao");
 const spanApiUrl = document.getElementById("apiUrl");
 
+const lastUsername = localStorage.getItem("lastUsername");
+
 togglePassword.addEventListener("click", () => {
     const type =
         passwordInput.getAttribute("type") === "password" ? "text" : "password";
@@ -181,6 +183,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (lastUsername) {
             usernameInput.value = lastUsername;
             passwordInput.focus();
+            
+            // Trigger visibility check for API URL if username is ADM
+            if (spanApiUrl && lastUsername.toUpperCase() === "ADM") {
+                spanApiUrl.classList.remove("d-none");
+            }
         } else {
             usernameInput.focus();
         }
@@ -195,6 +202,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (version) {
             version.textContent = await window.electronAPI.getVersion();
         }
+
+        
 
         const config = await window.electronAPI.getConfig();
         if (spanApiUrl) {

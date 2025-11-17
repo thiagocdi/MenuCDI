@@ -19,7 +19,9 @@ module.exports = {
                 setupIcon: './assets/images/icon.ico',
                 loadingGif: './assets/images/installer.gif',
                 noMsi: true,
-                remoteReleases: 'https://github.com/thiagocdi/MenuCDI',
+                // remoteReleases disabled during build to avoid 404/rate limit errors
+                // Auto-update will still work via update-electron-app in main.js
+                // remoteReleases: 'https://github.com/thiagocdi/MenuCDI',
             },
         },
         {
