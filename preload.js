@@ -12,7 +12,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     getAuthState: () => ipcRenderer.invoke("get-auth-state"),
 
     // Systems/Menu
-    getSystems: () => ipcRenderer.invoke("api-get-systems"),
+    getSystems: (onlyHidden = 0) => ipcRenderer.invoke("api-get-systems", onlyHidden),
     getSystemVersion: (systemId) => ipcRenderer.invoke("api-get-system-version", systemId),
     downloadSystem: (systemId) => ipcRenderer.invoke("api-download-system", systemId),
     extractZip: (zipPath, destDir) => ipcRenderer.invoke("extract-zip", zipPath, destDir),

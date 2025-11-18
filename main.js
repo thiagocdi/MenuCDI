@@ -433,7 +433,7 @@ ipcMain.handle("get-auth-state", () => {
     };
 });
 
-ipcMain.handle("api-get-systems", async () => {
+ipcMain.handle("api-get-systems", async (event, onlyHidden = 0) => {
 /**
  * Handler: api-get-systems
  * Busca a lista de sistemas/sistemasMenu disponíveis para o usuário autenticado.
@@ -444,27 +444,8 @@ ipcMain.handle("api-get-systems", async () => {
 
     try {
         if (!authToken) throw new Error("Not authenticated");
-        // Try legacy endpoint first, then fallback to documented API sample
         let response;
-        try {
-            response = await axios.get(
-                `${appConfig.apiBaseUrl}/sistemas/menu`,
-                {
-                    headers: { Authorization: `Bearer ${authToken}` },
-                }
-            );
-        } catch (err) {
-            if (err.response && err.response.status === 404) {
-                response = null;
-            } else {
-                throw err;
-            }
-        }
-
-        if (response && response.data) return response.data;
-
-        // Fallback to /sistemasMenu (API sample)
-        response = await axios.get(`${appConfig.apiBaseUrl}/sistemasMenu`, {
+        response = await axios.get(`${appConfig.apiBaseUrl}/sistemasMenu${onlyHidden ? '?Mostrar=0' : ''}`, {
             headers: { Authorization: `Bearer ${authToken}` },
         });
 
@@ -535,114 +516,6 @@ ipcMain.handle("api-get-system-version", async (event, systemId) => {
             error.response ? error.response.data : ""
         );
         throw new Error(`Get system version failed: ${body}`);
-    }
-});
-
-ipcMain.handle("api-download-system-OLD", async (event, systemId) => {
-/**
- * Handler: api-download-system
- * Faz download do binário/zip do sistema no backend como stream e grava em
- * disco na pasta tmp (dentro de appConfig.caminhoExecLocal ou pasta tmp do SO).
- * Retorna { success: true, path } apontando para o arquivo temporário baixado.
- *
- * Observações de implementação:
- * - Usamos responseType: 'stream' e gravamos com createWriteStream para evitar
- *   serializar objetos de stream sobre IPC (causa erros de circular refs).
- * - Caso o backend retorne Content-Disposition com filename, usamos esse nome.
- */
-
-    try {
-        if (!authToken) throw new Error("Not authenticated");
-
-        // API sample uses POST /downloadSistema with IdSistema as query
-        const response = await axios.post(
-            `${appConfig.apiBaseUrl}/downloadSistema`,
-            null,
-            {
-                headers: { Authorization: `Bearer ${authToken}` },
-                params: { IdSistema: systemId },
-                responseType: "stream",
-            }
-        );
-
-        // Helper: parse Content-Disposition safely (supports filename* RFC5987)
-        function getFilenameFromContentDisposition(header) {
-            if (!header || typeof header !== "string") return null;
-            // Prefer filename* (RFC5987)
-            const fnStarMatch = header.match(/filename\*\s*=\s*([^;]+)/i);
-            if (fnStarMatch) {
-                let val = fnStarMatch[1].trim();
-                val = val.replace(/^['"]+|['"]+$/g, ""); // remove surrounding quotes
-                // pattern: charset'lang'encoded_filename
-                const rfcMatch = val.match(/^[^']*'[^']*'(.+)$/);
-                if (rfcMatch && rfcMatch[1]) {
-                    try {
-                        return decodeURIComponent(rfcMatch[1]);
-                    } catch (e) {
-                        return rfcMatch[1];
-                    }
-                }
-                try {
-                    return decodeURIComponent(val);
-                } catch (e) {
-                    return val;
-                }
-            }
-
-            // Fallback to filename=
-            const fnMatch = header.match(/filename\s*=\s*("?)([^";]+)\1/i);
-            if (fnMatch && fnMatch[2]) {
-                return fnMatch[2];
-            }
-
-            return null;
-        }
-
-        // Determine filename safely
-        const disposition =
-            response.headers && response.headers["content-disposition"];
-        let filename =
-            getFilenameFromContentDisposition(disposition) || `${systemId}.zip`;
-
-        // Sanitize filename: remove path components and illegal chars
-        filename = path.basename(filename);
-        // Replace quotes and control chars
-        filename = filename
-            .replace(/["']/g, "")
-            .replace(/[\0<>:"/\\|?*\x00-\x1F]/g, "_");
-
-        // Ensure tmp dir exists
-        const tmpDir = path.join(
-            appConfig.caminhoExecLocal || os.tmpdir(),
-            "tmp"
-        );
-        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
-
-        const tmpPath = path.join(tmpDir, filename);
-
-        // Write stream to disk
-        const writer = fs.createWriteStream(tmpPath);
-        await new Promise((resolve, reject) => {
-            response.data.pipe(writer);
-            writer.on("finish", resolve);
-            writer.on("error", reject);
-        });
-
-        return { success: true, path: tmpPath };
-    } catch (error) {
-        const status = error.response && error.response.status;
-        const statusText = error.response && error.response.statusText;
-        console.error("Download system error:", error.message, {
-            status,
-            statusText,
-        });
-        const body =
-            error.response && error.response.data
-                ? typeof error.response.data === "string"
-                    ? error.response.data
-                    : "[object]"
-                : error.message;
-        throw new Error(`Download system failed: ${body}`);
     }
 });
 
@@ -1731,9 +1604,9 @@ ipcMain.handle('install-app-update', async (event, installerPath) => {
     }
 });
 
+ipcMain.handle('open-external', async (event, url) => {
 // Handler: open-external
 // Opens a URL in the default browser
-ipcMain.handle('open-external', async (event, url) => {
     try {
         const { shell } = require('electron');
         await shell.openExternal(url);

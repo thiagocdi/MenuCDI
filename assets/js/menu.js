@@ -2,6 +2,7 @@
 let isLoading = false;
 let currentUser = null;
 let menuItems = [];
+let hiddenMenuItems = [];
 let appConfig = {};
 // Track ongoing downloads per system ID
 let downloadingSystemIds = new Set();
@@ -572,6 +573,32 @@ async function launchSystem(system) {
             title: "Erro",
             message: error.message || 'Erro ao iniciar sistema',
             duration: 5000,
+            autohide: true,
+        });
+    }
+}
+
+checkHiddenSystems();
+async function checkHiddenSystems() {
+    try {
+        const hiddenSystems = await window.electronAPI.getSystems(1);
+        hiddenMenuItems = hiddenSystems.map((sistema) => ({
+            idSistema: sistema.idSistema,
+            title: sistema.descricao,
+            icon: sistema.icon || "bi-application",
+            action: sistema.nomeExe,
+        }));
+
+        console.log("hiddenSystems", hiddenSystems)
+
+        //renderMenuItems();
+    } catch (error) {
+        console.error("Load internal systems error:", error);
+        showToast({
+            color: "danger",
+            title: "Erro",
+            message: "Erro ao carregar sistemas internos: " + error.message,
+            duration: 3000,
             autohide: true,
         });
     }
