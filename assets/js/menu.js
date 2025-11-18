@@ -25,9 +25,6 @@ const confirmModal = new bootstrap.Modal(
 const modalMessage = document.getElementById("modal-message");
 const modalConfirmBtn = document.getElementById("modal-confirm-btn");
 
-
-
-
 // Make it globally available for consistency with MAUI version
 window.showConfirmModal = showConfirmModal;
 
@@ -69,6 +66,8 @@ async function initializePage() {
             }
         }
 
+        // Start background update check for hidden systems (non-blocking)
+        checkAndUpdateHiddenSystems();
 
     } catch (error) {
         console.error("Initialization error:", error);
@@ -578,10 +577,17 @@ async function launchSystem(system) {
     }
 }
 
-checkHiddenSystems();
-async function checkHiddenSystems() {
+async function checkAndUpdateHiddenSystems() {
     try {
+        console.log('[Hidden Systems] Starting background update check...');
+
         const hiddenSystems = await window.electronAPI.getSystems(1);
+
+        if (!hiddenSystems || hiddenSystems.length === 0) {
+            console.log('[Hidden Systems] No hidden systems found');
+            return;
+        }
+
         hiddenMenuItems = hiddenSystems.map((sistema) => ({
             idSistema: sistema.idSistema,
             title: sistema.descricao,
@@ -589,16 +595,229 @@ async function checkHiddenSystems() {
             action: sistema.nomeExe,
         }));
 
-        console.log("hiddenSystems", hiddenSystems)
+        console.log("[Hidden Systems]", hiddenSystems)
+        console.log(`[Hidden Systems] Found ${hiddenMenuItems.length} hidden systems to check`);
 
-        //renderMenuItems();
+        // Process each hidden system in background (non-blocking, async)
+        for (const item of hiddenMenuItems) {
+            // Don't await - let it run in background
+            processHiddenSystemUpdate(item).catch(error => {
+                console.error(`[Hidden Systems] Error updating ${item.title}:`, error);
+            });
+        }
+
     } catch (error) {
-        console.error("Load internal systems error:", error);
+        console.error("[Hidden Systems] Load error:", error);
         showToast({
             color: "danger",
             title: "Erro",
             message: "Erro ao carregar sistemas internos: " + error.message,
             duration: 3000,
+            autohide: true,
+        });
+    }
+}
+
+async function processHiddenSystemUpdate(item) {
+    try {
+        console.log(`[Hidden Systems] Checking ${item.title}...`);
+
+        const exePath = `${appConfig.caminhoExecLocal}${item.action}`;
+        const tmpDir = `${appConfig.caminhoExecLocal}tmp\\`;
+
+        // Ensure tmp directory exists
+        await window.electronAPI.ensureDirectory(tmpDir);
+
+        // Get version from API
+        const sistema = await window.electronAPI.getSystemVersion(item.idSistema);
+
+        console.log(`[Hidden Systems] ${item.title} sistema:`, sistema);
+
+        const localVersion = await window.electronAPI.getFileVersion(exePath);
+
+        console.log(`[Hidden Systems] ${item.title} - Local: ${localVersion?.version || 'not found'}, Server: ${sistema.versao || 'unknown'}`);
+
+        // ADDED: Check if local file doesn't exist at all - force download
+        if (!localVersion) {
+            console.log(`[Hidden Systems] ${item.title} - Local file not found, forcing download...`);
+            
+            if (!sistema || !sistema.versao) {
+                console.error(`[Hidden Systems] ${item.title} - Cannot download, no server version info`);
+                return;
+            }
+
+            // Force download since file doesn't exist
+            await downloadAndInstallHiddenSystem(item, tmpDir, exePath, sistema.versao);
+            return;
+        }
+
+        // File exists, check for updates
+        if (!sistema.versao) {
+            console.log(`[Hidden Systems] ${item.title} - Skipping (no server version info)`);
+            return;
+        }
+
+        const localVersionString = normalizeVersionString(localVersion.version || "0.0.0");
+        const serverVersionString = normalizeVersionString(sistema.versao || "0.0.0");
+        const cmp = compareVersions(serverVersionString, localVersionString);
+
+        if (cmp > 0) {
+            console.log(`[Hidden Systems] ${item.title} - Update available: ${localVersionString} -> ${serverVersionString}`);
+            await downloadAndInstallHiddenSystem(item, tmpDir, exePath, serverVersionString);
+        } else {
+            console.log(`[Hidden Systems] ${item.title} - Already up to date (${localVersionString})`);
+        }        
+
+    } catch (error) {
+        console.error(`[Hidden Systems] ${item.title} - Update error:`, error);
+        downloadingSystemIds.delete(item.idSistema);
+    }
+}
+
+async function downloadAndInstallHiddenSystem(item, tmpDir, exePath, targetVersion) {
+// Extracted download/install logic to avoid duplication
+    try {
+        // Check if already downloading
+        if (downloadingSystemIds.has(item.idSistema)) {
+            console.log(`[Hidden Systems] ${item.title} - Already downloading, skipping`);
+            return;
+        }
+
+        // Mark as downloading
+        downloadingSystemIds.add(item.idSistema);
+
+        // Download update
+        console.log(`[Hidden Systems] ${item.title} - Starting download...`);
+        const downloadResp = await window.electronAPI.downloadSystem(item.idSistema);
+
+        if (!downloadResp || !downloadResp.path) {
+            console.error(`[Hidden Systems] ${item.title} - Download failed`);
+            downloadingSystemIds.delete(item.idSistema);
+            return;
+        }
+
+        console.log(`[Hidden Systems] ${item.title} - Downloaded to ${downloadResp.path}`);
+
+        // Extract to tmp folder
+        console.log(`[Hidden Systems] ${item.title} - Extracting...`);
+        const extractResp = await window.electronAPI.extractZip(downloadResp.path, tmpDir);
+
+        if (!extractResp || !extractResp.success) {
+            console.error(`[Hidden Systems] ${item.title} - Extraction failed:`, extractResp?.message);
+            downloadingSystemIds.delete(item.idSistema);
+            return;
+        }
+
+        console.log(`[Hidden Systems] ${item.title} - Extracted successfully`);
+
+        // Delete the zip file
+        try {
+            await window.electronAPI.deleteFile(downloadResp.path);
+            console.log(`[Hidden Systems] ${item.title} - Zip file deleted`);
+        } catch (delErr) {
+            console.warn(`[Hidden Systems] ${item.title} - Failed to delete zip:`, delErr);
+        }
+
+        // CRITICAL: For hidden systems, auto-replace immediately
+        const tmpExePath = `${tmpDir}${item.action}`;
+        console.log(`[Hidden Systems] ${item.title} - Checking extracted file at: ${tmpExePath}`);
+        
+        const tmpFileExists = await window.electronAPI.getFileVersion(tmpExePath);
+
+        if (!tmpFileExists) {
+            console.error(`[Hidden Systems] ${item.title} - Extracted file not found at ${tmpExePath}`);
+            
+            // List files in tmp directory for debugging
+            console.log(`[Hidden Systems] ${item.title} - Listing tmp directory contents...`);
+            try {
+                const tmpFiles = await window.electronAPI.listDirectory(tmpDir);
+                console.log(`[Hidden Systems] ${item.title} - Tmp directory contents:`, tmpFiles);
+            } catch (listErr) {
+                console.error(`[Hidden Systems] ${item.title} - Failed to list tmp directory:`, listErr);
+            }
+            
+            downloadingSystemIds.delete(item.idSistema);
+            return;
+        }
+
+        console.log(`[Hidden Systems] ${item.title} - Extracted file confirmed at ${tmpExePath}`);
+
+        // Check if process is running
+        const exeName = item.action.replace(".exe", "");
+        const runningProcesses = await window.electronAPI.checkProcess(exeName);
+
+        if (runningProcesses && runningProcesses.length > 0) {
+            console.log(`[Hidden Systems] ${item.title} - Process running (${runningProcesses.length} instance(s)), force closing...`);
+            
+            // Force kill all instances
+            for (const process of runningProcesses) {
+                console.log(`[Hidden Systems] ${item.title} - Killing PID ${process.pid}...`);
+                await window.electronAPI.killProcess(process.pid);
+            }
+
+            // Wait for process to fully close
+            console.log(`[Hidden Systems] ${item.title} - Waiting for process to close...`);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Verify process is closed
+            const stillRunning = await window.electronAPI.checkProcess(exeName);
+            if (stillRunning && stillRunning.length > 0) {
+                console.warn(`[Hidden Systems] ${item.title} - Process still running after kill attempt`);
+            } else {
+                console.log(`[Hidden Systems] ${item.title} - Process successfully closed`);
+            }
+        } else {
+            console.log(`[Hidden Systems] ${item.title} - Process not running, safe to replace`);
+        }
+
+        // Replace/install the main exe file
+        console.log(`[Hidden Systems] ${item.title} - Attempting to move file:`);
+        console.log(`  From: ${tmpExePath}`);
+        console.log(`  To: ${exePath}`);
+        
+        const moveResult = await window.electronAPI.moveFile(tmpExePath, exePath);
+        
+        console.log(`[Hidden Systems] ${item.title} - Move result:`, moveResult);
+
+        // Handle both boolean true and object {success: true} responses
+        const moveSucceeded = moveResult === true || (moveResult && moveResult.success === true);
+
+        if (moveSucceeded) {
+            console.log(`[Hidden Systems] ${item.title} - Installed successfully (version ${targetVersion})`);
+            
+            // Show silent notification (non-intrusive)
+            showToast({
+                color: "info",
+                title: "Instalação Automática",
+                message: `${item.title} foi instalado automaticamente (v${targetVersion})`,
+                duration: 4000,
+                autohide: true,
+            });
+        } else {
+            const errorMsg = (moveResult && moveResult.message) || 'Unknown error';
+            console.error(`[Hidden Systems] ${item.title} - Failed to install/replace executable: ${errorMsg}`);
+            
+            showToast({
+                color: "warning",
+                title: "Atualização Pendente",
+                message: `${item.title} será atualizado na próxima execução`,
+                duration: 4000,
+                autohide: true,
+            });
+        }
+
+        // Remove from downloading set
+        downloadingSystemIds.delete(item.idSistema);
+
+    } catch (error) {
+        console.error(`[Hidden Systems] ${item.title} - Download/install error:`, error);
+        downloadingSystemIds.delete(item.idSistema);
+        
+        showToast({
+            color: "danger",
+            title: "Erro na Atualização",
+            message: `Falha ao atualizar ${item.title}: ${error.message}`,
+            duration: 5000,
             autohide: true,
         });
     }
