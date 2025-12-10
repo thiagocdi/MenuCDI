@@ -573,13 +573,12 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
             .replace(/["']/g, "")
             .replace(/[\0<>:"/\\|?*\x00-\x1F]/g, "_");
 
-        const tmpDir = path.join(
-            appConfig.caminhoExecLocal || os.tmpdir(),
-            "tmp"
-        );
+        // FIXED: Always use local temp directory first (network paths may have write restrictions)
+        const tmpDir = path.join(os.tmpdir(), "MenuCDI-Downloads");
         if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
         const tmpPath = path.join(tmpDir, filename);
+        console.log(`[Download] Using local temp path: ${tmpPath}`);
 
         // Write stream to disk
         const writer = fs.createWriteStream(tmpPath);
@@ -590,6 +589,7 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
             response.data.on && response.data.on("error", reject);
         });
 
+        console.log(`[Download] File saved to local temp: ${tmpPath}`);
         return { success: true, path: tmpPath };
     } catch (error) {
         // Read and stringify possible stream/object response bodies (best-effort)
