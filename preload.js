@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     // Configuration
     getConfig: () => ipcRenderer.invoke("get-config"),
     setConfig: (key, value) => ipcRenderer.invoke("set-config", key, value),
+    getLocalTempDir: () => ipcRenderer.invoke("get-local-temp-dir"),
 
     // Authentication
     checkApiStatus: () => ipcRenderer.invoke("api-status"),

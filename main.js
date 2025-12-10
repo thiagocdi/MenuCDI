@@ -310,6 +310,19 @@ ipcMain.handle("set-config", (event, key, value) => {
     return true;
 });
 
+ipcMain.handle("get-local-temp-dir", () => {
+/**
+ * Handler: get-local-temp-dir
+ * Returns the local temporary directory path for MenuCDI operations.
+ * Always uses the local user temp directory to avoid network path permission issues.
+ */
+    const localTempDir = path.join(os.tmpdir(), "MenuCDI-Temp");
+    if (!fs.existsSync(localTempDir)) {
+        fs.mkdirSync(localTempDir, { recursive: true });
+    }
+    return localTempDir + path.sep; // Return with trailing separator
+});
+
 ipcMain.handle("api-status", async () => {
 /**
  * Handler: api-status
@@ -686,8 +699,17 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
             status,
             statusText,
             body: bodyStr,
+            systemId,
+            apiUrl: `${appConfig.apiBaseUrl}/downloadSistema`,
         });
-        throw new Error(`Download system failed: ${bodyStr}`);
+        
+        // Provide clearer error message for common issues
+        let errorMessage = bodyStr;
+        if (bodyStr.includes("Arquivo não encontrado") || bodyStr.includes("não encontrado")) {
+            errorMessage = `Arquivo não disponível no servidor para o sistema ${systemId}. ${bodyStr}`;
+        }
+        
+        throw new Error(`Download system failed: ${errorMessage}`);
     }
 });
 

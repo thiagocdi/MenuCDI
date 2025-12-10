@@ -156,7 +156,8 @@ async function handleMenuClick(item) {
         showLoading(true, `Iniciando ${item.title}...`);
 
         const exePath = `${appConfig.caminhoExecLocal}${item.action}`;
-        const tmpDir = `${appConfig.caminhoExecLocal}tmp\\`;
+        // FIXED: Use local temp directory for extraction (network paths may have permission issues)
+        const tmpDir = await window.electronAPI.getLocalTempDir();
 
         // Ensure tmp directory exists
         await window.electronAPI.ensureDirectory(tmpDir);
@@ -292,33 +293,47 @@ async function checkForSystemUpdates(item, tmpDir) {
                 // Download update in background and return downloaded path
                 const downloadResp = await downloadSystemUpdate(item, tmpDir);
                 if (downloadResp && downloadResp.path) {
-                    // Try to extract the downloaded zip to tmpDir
+                    // FIXED: Extract to local temp directory (tmpDir is now local, not network)
                     try {
-                        const extractResp = await window.electronAPI.extractZip(downloadResp.path, tmpDir);
+                        console.log(`Extracting ${item.title} from ${downloadResp.path} to ${tmpDir}`);
+                        const extractResp = await window.electronAPI.extractZip(
+                            downloadResp.path, 
+                            tmpDir
+                        );
+                        
                         if (extractResp && extractResp.success) {
-                            // After extraction, check for the expected tmp exe and move it to exePath
-                            const tmpExePath = `${tmpDir}${item.action}`;
-                            const tmpFileExists = await window.electronAPI.getFileVersion(tmpExePath);
-                            if (tmpFileExists) {
-                                //delete the .zip file
-                                await window.electronAPI.deleteFile(downloadResp.path);
-                                
-                                // Show success notification
-                                showToast({
-                                    color: "success",
-                                    title: "Atualização Concluída",
-                                    message: `${item.title} foi atualizado! Pode abrir novamente.`,
-                                    duration: 5000,
-                                    autohide: true,
-                                });
-                            } else {
-                                console.warn(`Extracted but tmp exe not found at ${tmpExePath}`);
-                            }
+                            console.log(`Successfully extracted ${item.title} to ${extractResp.dest}`);
+                            
+                            // Clean up downloaded zip
+                            await window.electronAPI.deleteFile(downloadResp.path);
+                            
+                            // Show success notification
+                            showToast({
+                                color: "success",
+                                title: "Atualização Concluída",
+                                message: `${item.title} foi atualizado! Pode abrir novamente.`,
+                                duration: 5000,
+                                autohide: true,
+                            });
                         } else {
                             console.warn("Extract failed:", extractResp && extractResp.message);
+                            showToast({
+                                color: "warning",
+                                title: "Erro na Extração",
+                                message: extractResp?.message || "Falha ao extrair atualização",
+                                duration: 4000,
+                                autohide: true,
+                            });
                         }
                     } catch (err) {
                         console.error("Extraction/apply update error:", err);
+                        showToast({
+                            color: "danger",
+                            title: "Erro",
+                            message: `Erro ao aplicar atualização: ${err.message}`,
+                            duration: 4000,
+                            autohide: true,
+                        });
                     }
                 }
                 
@@ -350,6 +365,27 @@ async function downloadSystemUpdate(item, tmpDir) {
         return null;
     } catch (error) {
         console.error("Download system update error:", error);
+        
+        // Show user-friendly error message
+        const errorMsg = error.message || String(error);
+        if (errorMsg.includes("Arquivo não encontrado") || errorMsg.includes("File not found")) {
+            showToast({
+                color: "warning",
+                title: "Atualização Indisponível",
+                message: `O servidor não tem o arquivo de atualização para ${item.title}. Contate o suporte.`,
+                duration: 6000,
+                autohide: true,
+            });
+        } else {
+            showToast({
+                color: "danger",
+                title: "Erro no Download",
+                message: `Falha ao baixar ${item.title}: ${errorMsg.substring(0, 100)}`,
+                duration: 5000,
+                autohide: true,
+            });
+        }
+        
         return null;
     }
 }
