@@ -534,8 +534,17 @@ ipcMain.handle("api-get-system-version", async (event, systemId) => {
 
 ipcMain.handle("api-download-system", async (event, systemId) => {
     try {
-        if (!authToken) throw new Error("Not authenticated");
+        console.log(`[Download] Starting download for system ID: ${systemId}`);
+        
+        if (!authToken) {
+            console.error('[Download] Authentication token missing');
+            throw new Error("Not authenticated");
+        }
 
+        console.log(`[Download] Making API request to: ${appConfig.apiBaseUrl}/downloadSistema`);
+        console.log(`[Download] Request params: IdSistema=${systemId}`);
+        console.log(`[Download] Auth token present: ${authToken ? 'YES' : 'NO'}`);
+        
         const response = await axios.post(
             `${appConfig.apiBaseUrl}/downloadSistema`,
             null,
@@ -543,13 +552,18 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
                 headers: { Authorization: `Bearer ${authToken}` },
                 params: { IdSistema: systemId },
                 responseType: "stream",
+                timeout: 60000, // 60 second timeout
+                maxRedirects: 5,
             }
         );
 
         console.log(
-            "download response headers",
+            "[Download] Response received - Status:",
             response.status,
-            response.headers
+            "Content-Type:",
+            response.headers['content-type'],
+            "Content-Disposition:",
+            response.headers['content-disposition']
         );
 
         // Helper: parse Content-Disposition safely (supports filename* RFC5987)
@@ -588,22 +602,71 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
 
         // FIXED: Always use local temp directory first (network paths may have write restrictions)
         const tmpDir = path.join(os.tmpdir(), "MenuCDI-Downloads");
-        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        console.log(`[Download] Temp directory: ${tmpDir}`);
+        
+        try {
+            if (!fs.existsSync(tmpDir)) {
+                console.log(`[Download] Creating temp directory: ${tmpDir}`);
+                fs.mkdirSync(tmpDir, { recursive: true });
+            }
+        } catch (dirError) {
+            console.error(`[Download] Failed to create temp directory: ${dirError.message}`);
+            throw new Error(`Não foi possível criar diretório temporário: ${dirError.message}`);
+        }
 
         const tmpPath = path.join(tmpDir, filename);
-        console.log(`[Download] Using local temp path: ${tmpPath}`);
+        console.log(`[Download] Target file path: ${tmpPath}`);
+        console.log(`[Download] Filename from server: ${filename}`);
+
+        // Check if we have write permissions
+        try {
+            fs.accessSync(tmpDir, fs.constants.W_OK);
+            console.log(`[Download] Write permission verified for: ${tmpDir}`);
+        } catch (permError) {
+            console.error(`[Download] No write permission for: ${tmpDir}`);
+            throw new Error(`Sem permissão de escrita no diretório temporário: ${tmpDir}`);
+        }
 
         // Write stream to disk
+        console.log(`[Download] Starting file write to: ${tmpPath}`);
         const writer = fs.createWriteStream(tmpPath);
+        
+        let bytesWritten = 0;
+        writer.on('pipe', () => {
+            console.log('[Download] Stream pipe started');
+        });
+        
         await new Promise((resolve, reject) => {
+            response.data.on('data', (chunk) => {
+                bytesWritten += chunk.length;
+            });
+            
             response.data.pipe(writer);
-            writer.on("finish", resolve);
+            writer.on("finish", () => {
+                console.log(`[Download] Write finished. Total bytes written: ${bytesWritten}`);
+                resolve();
+            });
             writer.on("error", reject);
             response.data.on && response.data.on("error", reject);
         });
 
-        console.log(`[Download] File saved to local temp: ${tmpPath}`);
-        return { success: true, path: tmpPath };
+        // Verify file was actually created and has content
+        try {
+            const stats = fs.statSync(tmpPath);
+            console.log(`[Download] File saved successfully:`);
+            console.log(`  - Path: ${tmpPath}`);
+            console.log(`  - Size: ${stats.size} bytes`);
+            console.log(`  - Created: ${stats.birthtime}`);
+            
+            if (stats.size === 0) {
+                throw new Error('Arquivo baixado está vazio (0 bytes)');
+            }
+            
+            return { success: true, path: tmpPath, size: stats.size };
+        } catch (statError) {
+            console.error(`[Download] File verification failed: ${statError.message}`);
+            throw new Error(`Arquivo não foi criado corretamente: ${statError.message}`);
+        }
     } catch (error) {
         // Read and stringify possible stream/object response bodies (best-effort)
         async function readStreamToString(
@@ -695,20 +758,61 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
 
         const status = error.response && error.response.status;
         const statusText = error.response && error.response.statusText;
-        console.error("Download system error:", {
-            status,
-            statusText,
-            body: bodyStr,
-            systemId,
-            apiUrl: `${appConfig.apiBaseUrl}/downloadSistema`,
+        const headers = error.response && error.response.headers;
+        
+        console.error("[Download] ERROR DETAILS:", {
+            errorType: error.constructor.name,
+            errorMessage: error.message,
+            errorCode: error.code,
+            httpStatus: status,
+            httpStatusText: statusText,
+            responseHeaders: headers,
+            responseBody: bodyStr,
+            requestSystemId: systemId,
+            requestUrl: `${appConfig.apiBaseUrl}/downloadSistema`,
+            stack: error.stack,
         });
         
         // Provide clearer error message for common issues
         let errorMessage = bodyStr;
-        if (bodyStr.includes("Arquivo não encontrado") || bodyStr.includes("não encontrado")) {
+        let errorCode = "DOWNLOAD_FAILED";
+        
+        // Special handling for 500 Internal Server Error
+        if (status === 500) {
+            console.error(`[Download] SERVER ERROR 500 - Server-side issue for system ${systemId}`);
+            console.error(`[Download] Server response body: ${bodyStr}`);
+            errorMessage = `Erro interno no servidor ao processar download do sistema ${systemId}. O servidor retornou: ${bodyStr}. Contate o administrador da API.`;
+            errorCode = "SERVER_ERROR_500";
+        } else if (status >= 500 && status < 600) {
+            errorMessage = `Erro no servidor (${status}): ${bodyStr}. Tente novamente mais tarde ou contate o suporte.`;
+            errorCode = "SERVER_ERROR";
+        } else if (error.code === 'EACCES') {
+            errorMessage = `Sem permissão de acesso ao diretório temporário. Verifique as permissões da pasta TEMP.`;
+            errorCode = "PERMISSION_DENIED";
+        } else if (error.code === 'ENOSPC') {
+            errorMessage = `Espaço em disco insuficiente para download.`;
+            errorCode = "DISK_FULL";
+        } else if (error.code === 'ENOENT') {
+            errorMessage = `Caminho não encontrado. Verifique se o diretório temporário existe.`;
+            errorCode = "PATH_NOT_FOUND";
+        } else if (error.code === 'ETIMEDOUT' || error.message.includes('timeout')) {
+            errorMessage = `Tempo de download esgotado. Verifique sua conexão de internet.`;
+            errorCode = "TIMEOUT";
+        } else if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+            errorMessage = `Não foi possível conectar ao servidor. Verifique sua conexão.`;
+            errorCode = "CONNECTION_FAILED";
+        } else if (bodyStr.includes("Arquivo não encontrado") || bodyStr.includes("não encontrado")) {
             errorMessage = `Arquivo não disponível no servidor para o sistema ${systemId}. ${bodyStr}`;
+            errorCode = "FILE_NOT_FOUND";
+        } else if (status === 404) {
+            errorMessage = `Endpoint de download não encontrado no servidor (404).`;
+            errorCode = "ENDPOINT_NOT_FOUND";
+        } else if (status === 401 || status === 403) {
+            errorMessage = `Sem autorização para fazer download (${status}). Faça login novamente.`;
+            errorCode = "UNAUTHORIZED";
         }
         
+        console.error(`[Download] Throwing error with code: ${errorCode}`);
         throw new Error(`Download system failed: ${errorMessage}`);
     }
 });

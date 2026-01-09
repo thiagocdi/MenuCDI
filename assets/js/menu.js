@@ -358,33 +358,60 @@ async function downloadSystemUpdate(item, tmpDir) {
             item.idSistema
         );
 
-        if (response) {
-            console.log(`System update downloaded for ${item.title}`);
+        if (response && response.success) {
+            console.log(`System update downloaded for ${item.title} - Size: ${response.size || 'unknown'} bytes`);
             return response;
+        } else if (response) {
+            console.warn(`Download returned but success=false for ${item.title}:`, response);
+            throw new Error(response.message || response.error || 'Download falhou sem mensagem específica');
         }
+        
+        console.warn(`Download returned null/undefined for ${item.title}`);
         return null;
     } catch (error) {
         console.error("Download system update error:", error);
         
-        // Show user-friendly error message
+        // Show user-friendly error message with specific codes
         const errorMsg = error.message || String(error);
-        if (errorMsg.includes("Arquivo não encontrado") || errorMsg.includes("File not found")) {
-            showToast({
-                color: "warning",
-                title: "Atualização Indisponível",
-                message: `O servidor não tem o arquivo de atualização para ${item.title}. Contate o suporte.`,
-                duration: 6000,
-                autohide: true,
-            });
+        let toastColor = "danger";
+        let toastTitle = "Erro no Download";
+        let toastMessage = `Falha ao baixar ${item.title}`;
+        
+        // Check for specific error patterns
+        if (errorMsg.includes("SERVER_ERROR_500") || errorMsg.includes("status code 500") || errorMsg.includes("Erro interno no servidor")) {
+            toastColor = "danger";
+            toastTitle = "Erro no Servidor";
+            toastMessage = `O servidor encontrou um erro ao processar ${item.title}. Contate o administrador da API para verificar os logs do servidor.`;
+        } else if (errorMsg.includes("SERVER_ERROR") || (errorMsg.includes("status code") && errorMsg.match(/5\d{2}/))) {
+            toastColor = "danger";
+            toastTitle = "Erro no Servidor";
+            toastMessage = `Erro no servidor ao baixar ${item.title}. Tente novamente mais tarde ou contate o suporte.`;
+        } else if (errorMsg.includes("Arquivo não encontrado") || errorMsg.includes("FILE_NOT_FOUND")) {
+            toastColor = "warning";
+            toastTitle = "Atualização Indisponível";
+            toastMessage = `O servidor não tem o arquivo de atualização para ${item.title}. Contate o suporte.`;
+        } else if (errorMsg.includes("PERMISSION_DENIED") || errorMsg.includes("permissão")) {
+            toastMessage = `Sem permissão de acesso. Execute o aplicativo como Administrador ou verifique as permissões da pasta TEMP.`;
+        } else if (errorMsg.includes("DISK_FULL") || errorMsg.includes("espaço em disco")) {
+            toastMessage = `Espaço em disco insuficiente para download. Libere espaço e tente novamente.`;
+        } else if (errorMsg.includes("TIMEOUT") || errorMsg.includes("tempo")) {
+            toastMessage = `Tempo de download esgotado. Verifique sua conexão com a internet e tente novamente.`;
+        } else if (errorMsg.includes("CONNECTION_FAILED") || errorMsg.includes("conectar")) {
+            toastMessage = `Não foi possível conectar ao servidor. Verifique sua conexão de rede.`;
+        } else if (errorMsg.includes("UNAUTHORIZED") || errorMsg.includes("autorização")) {
+            toastMessage = `Sessão expirada. Faça login novamente.`;
         } else {
-            showToast({
-                color: "danger",
-                title: "Erro no Download",
-                message: `Falha ao baixar ${item.title}: ${errorMsg.substring(0, 100)}`,
-                duration: 5000,
-                autohide: true,
-            });
+            // Generic error with truncated message
+            toastMessage = `Falha ao baixar ${item.title}: ${errorMsg.substring(0, 150)}`;
         }
+        
+        showToast({
+            color: toastColor,
+            title: toastTitle,
+            message: toastMessage,
+            duration: 8000,
+            autohide: true,
+        });
         
         return null;
     }
@@ -419,12 +446,35 @@ window.electronAPI.onSystemDownloadComplete((event, data) => {
 
 window.electronAPI.onSystemDownloadFailed((event, data) => {
     console.log('[System Download] Failed:', data);
+    console.error('[System Download] Error details:', {
+        systemId: data.systemId,
+        error: data.error,
+        timestamp: new Date().toISOString()
+    });
+    
     showLoading(false);
+    
+    // Parse error message for specific handling
+    const errorMsg = data.error || 'Erro desconhecido';
+    let toastMessage = `Falha ao baixar sistema: ${errorMsg}`;
+    let toastTitle = "Erro no Download";
+    
+    if (errorMsg.includes('status code 500') || errorMsg.includes('SERVER_ERROR_500')) {
+        toastTitle = "Erro no Servidor";
+        toastMessage = "O servidor encontrou um erro ao processar esta solicitação. Contate o administrador da API.";
+    } else if (errorMsg.match(/status code 5\d{2}/)) {
+        toastTitle = "Erro no Servidor";
+        toastMessage = "Erro no servidor. Tente novamente mais tarde ou contate o suporte.";
+    } else if (errorMsg.includes('401') || errorMsg.includes('403')) {
+        toastTitle = "Sem Autorização";
+        toastMessage = "Sua sessão expirou. Por favor, faça login novamente.";
+    }
+    
     showToast({
         color: "danger",
-        title: "Erro no Download",
-        message: `Falha ao baixar sistema: ${data.error}`,
-        duration: 5000,
+        title: toastTitle,
+        message: toastMessage,
+        duration: 8000,
         autohide: true,
     });
 });
