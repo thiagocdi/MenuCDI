@@ -565,18 +565,33 @@ function parseVersion(v) {
         });
 }
 
+// Utility: normalize variable-length versions to 3 segments (X.Y.Z)
+// Handles both 3-part and 4-part versions:
+// - 1.0.0.1249 (4 parts) -> 1.0.1249 (extract major.minor.revision)
+// - 1.0.1247 (3 parts)   -> 1.0.1247 (keep as-is)
+function normalizeVersionParts(parts) {
+    const safe = Array.isArray(parts) ? parts.slice() : [];
+
+    if (safe.length === 0) return [0, 0, 0];
+    if (safe.length === 1) return [safe[0], 0, 0];
+    if (safe.length === 2) return [safe[0], safe[1], 0];
+    if (safe.length === 3) return [safe[0], safe[1], safe[2]];
+    
+    // 4 or more parts: extract major.minor.revision (skip build at index 2)
+    return [safe[0], safe[1], safe[3] || 0];
+}
+
 // Utility: normalize version to a canonical string "x.y.z"
 function normalizeVersionString(v) {
-    const parts = parseVersion(v);
-    if (parts.length === 0) return "0.0.0";
+    const parts = normalizeVersionParts(parseVersion(v));
     return parts.join(".");
 }
 
 // Utility: compare two version strings (numeric comparison)
 // returns 1 if a>b, -1 if a<b, 0 if equal
 function compareVersions(a, b) {
-    const A = parseVersion(a);
-    const B = parseVersion(b);
+    const A = normalizeVersionParts(parseVersion(a));
+    const B = normalizeVersionParts(parseVersion(b));
     const len = Math.max(A.length, B.length);
     for (let i = 0; i < len; i++) {
         const ai = A[i] || 0;
@@ -675,10 +690,11 @@ async function checkAndUpdateHiddenSystems() {
         }
 
         hiddenMenuItems = hiddenSystems.map((sistema) => ({
-            idSistema: sistema.idSistema,
-            title: sistema.descricao,
+            id: sistema.idSistema,
+            name: sistema.descricao,
             icon: sistema.icon || "bi-application",
             action: sistema.nomeExe,
+            versao: sistema.versao,
         }));
 
         console.log("[Hidden Systems]", hiddenSystems)
@@ -688,7 +704,7 @@ async function checkAndUpdateHiddenSystems() {
         for (const item of hiddenMenuItems) {
             // Don't await - let it run in background
             processHiddenSystemUpdate(item).catch(error => {
-                console.error(`[Hidden Systems] Error updating ${item.title}:`, error);
+                console.error(`[Hidden Systems] Error updating ${item.name}:`, error);
             });
         }
 
@@ -707,24 +723,32 @@ async function checkAndUpdateHiddenSystems() {
 async function processHiddenSystemUpdate(system) {
     try {
         console.log(`[Hidden Systems] Processing ${system.name}...`);
+
+        if (!system.action || system.action.trim() === ".exe") {
+            console.warn(`[Hidden Systems] ${system.name} - nomeExe inválido (${system.action}), skipping update check`);
+            return;
+        }
+
+        const basePath = (appConfig?.caminhoExecLocal || "").trim();
+        if (!basePath) {
+            console.warn(`[Hidden Systems] ${system.name} - caminhoExecLocal não configurado, skipping update check`);
+            return;
+        }
+
+        const normalizedBasePath = /[\\/]$/.test(basePath) ? basePath : `${basePath}\\`;
+        const exePath = `${normalizedBasePath}${system.action}`;
         
         // Get server version info
         const serverVersion = await window.electronAPI.getSystemVersion(system.id);
+        const serverVersionValue = serverVersion?.versao || serverVersion?.version;
         
         // FIXED: Skip systems without version info instead of throwing error
-        if (!serverVersion || !serverVersion.version) {
+        if (!serverVersionValue) {
             console.warn(`[Hidden Systems] ${system.name} - No version info available, skipping update check`);
             return;
         }
 
-        console.log(`[Hidden Systems] ${system.name} - Server version: ${serverVersion.version}`);
-
-        // Build full exe path
-        const exePath = await buildExePath(system);
-        if (!exePath) {
-            console.warn(`[Hidden Systems] ${system.name} - Cannot build exe path`);
-            return;
-        }
+        console.log(`[Hidden Systems] ${system.name} - Server version: ${serverVersionValue}`);
 
         // Get local file version
         const localVersion = await window.electronAPI.getFileVersion(exePath);
@@ -736,11 +760,12 @@ async function processHiddenSystemUpdate(system) {
             return;
         }
 
-        console.log(`[Hidden Systems] ${system.name} - Local version: ${localVersion.version}`);
+        const localVersionValue = localVersion.version || "0.0.0";
+        console.log(`[Hidden Systems] ${system.name} - Local version: ${localVersionValue}`);
 
-        // Compare versions (simple string comparison for now)
-        if (serverVersion.version !== localVersion.version) {
-            console.log(`[Hidden Systems] ${system.name} - Update needed (${localVersion.version} -> ${serverVersion.version})`);
+        // Compare versions numerically to avoid string pitfalls (e.g. 1.0.10 > 1.0.2)
+        if (compareVersions(serverVersionValue, localVersionValue) > 0) {
+            console.log(`[Hidden Systems] ${system.name} - Update needed (${localVersionValue} -> ${serverVersionValue})`);
             await downloadAndExtractSystem(system, exePath);
         } else {
             console.log(`[Hidden Systems] ${system.name} - Already up to date`);

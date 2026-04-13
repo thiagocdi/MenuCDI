@@ -1,6 +1,6 @@
 {
 	"name": "menucdi",
-	"version": "1.0.31",
+	"version": "1.0.34",
 	"description": "Menu CDI Softwares Launcher",
 	"main": "main.js",
 	"author": "CDI Informática e Assessoria Ltda",
@@ -66,9 +66,7 @@
 		},
 		"squirrelWindows": {
 			"iconUrl": "https://raw.githubusercontent.com/thiagocdi/MenuCDI/main/assets/images/icon.ico",
-			"loadingGif": "assets/images/installer.gif",
-			"createDesktopShortcut": true,
-			"createStartMenuShortcut": true
+			"loadingGif": "assets/images/installer.gif"
 		},
 		"publish": [
 			{

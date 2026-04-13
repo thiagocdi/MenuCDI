@@ -87,7 +87,7 @@ setx CDI_CAMINHO_EXEC_LOCAL "C:\YourAppsPath\" /M
 ### Development Mode
 ```bash
 # Start the application in development mode
-npm start
+npm startnpm 
 ```
 
 ### Production Build

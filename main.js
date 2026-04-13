@@ -817,16 +817,7 @@ ipcMain.handle("api-download-system", async (event, systemId) => {
     }
 });
 
-ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
-/**
- * Handler: extract-zip
- * Extrai um arquivo .zip para um diretório destino preservando as datas de
- * modificação presentes dentro do zip (mantém mtime original).
- * - zipPath: caminho completo do arquivo .zip já baixado
- * - destDir: diretório de destino onde o conteúdo será extraído
- * Retorna: { success: true, dest } ou { success: false, message }
- */
-
+async function extractZipPreservingMtime(zipPath, destDir) {
     let zip;
     try {
         if (!zipPath || !fs.existsSync(zipPath)) {
@@ -929,6 +920,19 @@ ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
         }
         return { success: false, message: error.message || String(error) };
     }
+}
+
+ipcMain.handle("extract-zip", async (event, zipPath, destDir) => {
+/**
+ * Handler: extract-zip
+ * Extrai um arquivo .zip para um diretório destino preservando as datas de
+ * modificação presentes dentro do zip (mantém mtime original).
+ * - zipPath: caminho completo do arquivo .zip já baixado
+ * - destDir: diretório de destino onde o conteúdo será extraído
+ * Retorna: { success: true, dest } ou { success: false, message }
+ */
+
+    return extractZipPreservingMtime(zipPath, destDir);
 });
 
 ipcMain.handle("delete-file", async (event, filePath) => {
@@ -1258,22 +1262,9 @@ ipcMain.handle("launch-exe", async (event, exePath, args = [], systemId = null) 
                 // Determine extraction directory from exePath
                 const destDir = path.dirname(tried[0] || exePath);
                 
-                // Extract the downloaded zip
-                const extractResult = await (async () => {
-                    try {
-                        console.log(`[launch-exe] Extracting ${downloadResult.path} to ${destDir}...`);
-                        
-                        const zip = new StreamZip.async({ file: downloadResult.path });
-                        await zip.extract(null, destDir);
-                        await zip.close();
-                        
-                        console.log(`[launch-exe] Extraction complete to: ${destDir}`);
-                        return { success: true, dest: destDir };
-                    } catch (error) {
-                        console.error("[launch-exe] Extract error:", error.message);
-                        return { success: false, message: error.message };
-                    }
-                })();
+                // Extract the downloaded zip preserving original mtime from entries.
+                console.log(`[launch-exe] Extracting ${downloadResult.path} to ${destDir}...`);
+                const extractResult = await extractZipPreservingMtime(downloadResult.path, destDir);
 
                 if (!extractResult.success) {
                     throw new Error(extractResult.message || 'Extraction failed');
